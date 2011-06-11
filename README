@@ -1,0 +1,16 @@
+          LangLang - Chomp
+  -------------------------------
+  "It's turtles all the way down"
+
+Chomp is a compiler/interpreter for the LangLang - a symbolic/homoiconic/declarative style
+language-language. In fact LangLang is many things, perhaps most obviously a programming language,
+but also a templating/schema language, a data format and a proof calculus amongst other things.
+For this reason Chomp also fills many roles, however our initial goal is bootstrapping a compiler
+for developing tools inside the language.
+
+Chomp is open source, licensed under the permissive MIT license.
+
+* The website for LangLang has not yet been published, however in the future more information
+  may be found at http://lang-lang.org/
+* Chomp itself can be found at https://github.com/LangLang/chomp
+* To contact the author of this tool, email code@rehno.lindeque.name
