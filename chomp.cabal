@@ -1,0 +1,51 @@
+name: chomp
+version: 0.0.1
+cabal-version: -any
+build-type: Simple
+license: AllRightsReserved
+license-file: licenses/MIT_LICENSE
+copyright: Copyright (C) Rehno Lindeque, 2011
+maintainer: Rehno Lindeque <code@rehno.lindeque.name>
+build-depends: base -any
+stability:
+homepage: lang-lang.org
+package-url:
+bug-reports:
+synopsis: LangLang Compiler
+description: A compiler/interpreter for LangLang, the programming language
+category: Compilers/Interpreters
+author: Rehno Lindeque <code@rehno.lindeque.name>
+tested-with:
+data-files:
+data-dir: ""
+extra-source-files:
+extra-tmp-files:
+ 
+executable: chomp
+main-is: Main.hs
+buildable: True
+build-tools:
+cpp-options:
+cc-options:
+ld-options:
+pkgconfig-depends:
+frameworks:
+c-sources:
+default-language:
+other-languages:
+default-extensions:
+other-extensions:
+extensions:
+extra-libraries:
+extra-lib-dirs:
+includes:
+install-includes:
+include-dirs:
+hs-source-dirs: src
+other-modules:
+ghc-prof-options:
+ghc-shared-options:
+ghc-options:
+hugs-options:
+nhc98-options:
+jhc-options:
