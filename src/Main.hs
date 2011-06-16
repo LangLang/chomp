@@ -117,23 +117,52 @@ parseRelation :: A.Parser (Expression -> Maybe Expression -> Expression)
 parseRelation =
   AC.string (pack "->") *> return (Eval . Declare)
 
-parseSimpleExpression :: A.Parser Expression
-parseSimpleExpression =
+parseSimpleExpr :: A.Parser Expression
+parseSimpleExpr =
   (AC.char '(' *> parseExpression <* skipComments <* AC.char ')')
   <|> parseSymbol
+
+parseSimpleQueryExpr :: A.Parser ExpressionSegment
+parseSimpleQueryExpr =
+  (parseQuantifier <* skipComments) <*> parseSimpleExpr
+
+parseComplexQueryExpr :: Maybe Expression -> A.Parser Expression
+parseComplexQueryExpr e =
+  (
+    ((Eval <$> parseSimpleQueryExpr <*> return e) >>= parseComplexQueryExpr . Just)
+    <|> return (fromJust e)
+  )
+
+--parseComplexQueryExpr :: Maybe Expression -> A.Parser Expression
+--parseComplexQueryExpr e =
+--  parseOptionalQueryExpr
+
+parseQueryExpr :: A.Parser Expression
+parseQueryExpr = do
+  quantifier <- optional parseQuantifier <* skipComments
+  root <- if isJust quantifier
+    then (return $ Eval . (fromJust quantifier)) <*> parseSimpleExpr <*> return Nothing
+    else parseSimpleExpr
+  parseComplexQueryExpr $ Just root
+--  parseQueryExpr Nothing
+--  <|> (parseSimpleExpr >>= ((parseQueryExpr <|> ) . Just))
+
+--parseNextQueryExpr :: Expression -> A.Parser Expression
+--parseNextQueryExpr e = (parseQueryExpr $ Just e)
+--
+--parseTopQueryExpr :: A.Parser Expression
+--parseTopQueryExpr =
+--  (parseQueryExpr Nothing >>= parseNextQueryExpr) <|> parseSimpleExpr
+
+
 
 parseRelationExpr :: Expression -> A.Parser Expression
 parseRelationExpr e =
   (AC.string (pack "->") *> return (Eval $ Declare e)) <*> optional parseExpression
 
-
 parseExpression :: A.Parser Expression
 parseExpression =
-  skipComments *>
-  (
-    (Eval <$> ((parseQuantifier <* skipComments) <*> parseExpression) <*> return Nothing)
-    <|> ((parseSimpleExpression <* skipComments) <**> parseRelation <*> return Nothing)
-  )
+  skipComments *> (parseQueryExpr >>= parseRelationExpr)
 
 
 {-
