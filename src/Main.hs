@@ -80,15 +80,80 @@ data QueryEval   = Assert Query
 --whitespace = skipWhile Data.Attoparsec.Char8.isSpace
 
 type Token      = B.ByteString
-data Expression = Symbol Token
+
+{-data Expression = Symbol Token
                 | Top
                 | Relation Statement [Statement]
-                | QueryConjunct Statement [Statement]
+                | QueryConjunct Statement [Statement]-}
 
-data Statement  = Declare Expression
-                | Assert Expression
-                | Witness Expression
+data Query = Conjunct Expression             -- (.Q)
 
+data ExpressionSegment = Declare Expression  -- (R->)
+                       | Assert Query        -- assert `dot` (.Q)   or    (:Q)
+                       | Witness Query       -- (.Q)
+
+data Expression = Symbol Token
+                | Top
+                | Eval ExpressionSegment (Maybe Expression)
+
+
+-- General parsing
+
+skipComments :: A.Parser ()
+skipComments = skipMany $
+  AC.skipSpace *> AC.char '#' *> (A.skipWhile $ not . AC.isEndOfLine)
+
+-- AST parsing
+
+parseSymbol :: A.Parser Expression
+parseSymbol =
+  (AC.char '_' *> pure Top) <|> (Symbol <$> AC.takeWhile AC.isAlpha_ascii)
+
+parseQuantifier :: A.Parser (Expression -> ExpressionSegment)
+parseQuantifier =
+  (AC.char ':' *> return (Assert . Conjunct)) <|> (AC.char '.' *> return (Witness . Conjunct))
+
+parseRelation :: A.Parser (Expression -> Maybe Expression -> Expression)
+parseRelation =
+  AC.string (pack "->") *> return (Eval . Declare)
+
+parseSimpleExpression :: A.Parser Expression
+parseSimpleExpression =
+  (AC.char '(' *> parseExpression <* skipComments <* AC.char ')')
+  <|> parseSymbol
+
+parseRelationExpr :: Expression -> A.Parser Expression
+parseRelationExpr e =
+  (AC.string (pack "->") *> return (Eval $ Declare e)) <*> optional parseExpression
+
+
+parseExpression :: A.Parser Expression
+parseExpression =
+  skipComments *>
+  (
+    (Eval <$> ((parseQuantifier <* skipComments) <*> parseExpression) <*> return Nothing)
+    <|> ((parseSimpleExpression <* skipComments) <**> parseRelation <*> return Nothing)
+  )
+
+
+{-
+data QueryType = Assert | Witness
+data ExpressionSegment = Declare Expression            -- (R->)  E.g. (R->)(S) => R->(S)
+                       | Query QueryType Expression     -- (:Q)   E.g. (:Q)(S)  => (S):Q
+                                                        -- E.g.
+                                                        --        (:Q)(R->) => (R->):Q
+                                                        --        (R->)(:Q)(S) => R->(S:Q)
+
+data CompoundExpression = Compound ExpressionSegment ExpressionSegment
+                        | Leaf ExpressionSegment Expression
+
+data Expression = Symbol Token
+                | CompoundExpression
+-}
+
+
+
+{-
 data Connective = Arrow | ArrowColon | ArrowDot | Colon | Dot
 
 skipComment :: A.Parser ()
@@ -133,10 +198,20 @@ parseConnectedStatement = do
     Just (Dot,        s) -> Witness $ QueryConjunct lhs [s]
     Nothing              -> lhs
 
+----------------------------------------
+
+parseExpression :: A.Parser Expression
+parseExpression =
+  (AC.char '(' *> parseExpression <* AC.char ')')
+    <|> parseSymbol
+
 parseStatement :: A.Parser Statement
 parseStatement = skipComment *>
-  ((AC.char '(' *> parseStatement <* skipComment <* AC.char ')')
-    <|> parseConnectedStatement)
+  parseQuantifier <*> parseExpression
+-}
+
+--  ((AC.char '(' *> parseStatement <* skipComment <* AC.char ')')
+--    <|> parseConnectedStatement)
 
 {-
 parseStatement :: A.Parser Statement
@@ -153,8 +228,8 @@ parseStatement = do
     Nothing         -> Declare Top
 -}
 
-parseLangLang :: A.Parser [Statement]
-parseLangLang = many parseStatement
+parseLangLang :: A.Parser [Expression]
+parseLangLang = many parseExpression
 
 -- Main loop
 main :: IO ()
