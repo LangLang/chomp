@@ -6,7 +6,7 @@ license: AllRightsReserved
 license-file: licenses/MIT_LICENSE
 copyright: Copyright (C) Rehno Lindeque, 2011
 maintainer: Rehno Lindeque <code@rehno.lindeque.name>
-build-depends: base -any, bytestring -any
+build-depends: attoparsec -any, base -any, bytestring -any
 stability:
 homepage: lang-lang.org
 package-url:
