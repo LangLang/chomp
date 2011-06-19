@@ -7,139 +7,20 @@ module Main( main ) where
 
 {-                                 MODULES                                  -}
 -- Standard
-import qualified Data.ByteString as B
-import Data.ByteString.Char8 (pack)
-import Data.Char
-import Data.Maybe
-import qualified Data.Attoparsec as A
-import qualified Data.Attoparsec.Char8 as AC
-import Data.Attoparsec.Combinator
+import qualified Data.ByteString as B (getContents)
+import Data.Attoparsec (parse)
 import Control.Monad
-import Control.Applicative hiding (many)
+
+-- Chomp
+import SyntaxTree
+import Parser
 
 {-                              IMPLEMENTATION                              -}
--- Syntax tree representation
-type Token      = B.ByteString
-
-data Query = Conjunct [Expression]             -- (.Q)
-
-data ExpressionSegment = Declare [Expression]  -- (R->)
-                       | Assert Query          -- assert `dot` (.Q)   or    (:Q)
-                       | Witness Query         -- (.Q)
-
-data Expression = Symbol Token
-                | Top
-                | Eval ExpressionSegment [Expression]
-
-instance Show Expression where
-  show (Symbol t)     = show t
-  show Top            = "_"
-  show (Eval lhs rhs) =
-    case lhs of
-      Declare lhs            -> showExpr lhs ++ " -> " ++ showExpr rhs
-      Assert (Conjunct lhs)  -> showExpr lhs ++ ":" ++ showExpr rhs
-      Witness (Conjunct lhs) -> showExpr lhs ++ "." ++ showExpr rhs
-    where
-      showExpr []     = "(ERROR: EMPTY EXPRESSION LIST)"
-      showExpr (e:[]) = show e
-      showExpr (e:es) = (foldl (++) ('(':(show e)) $ map show es) ++ ")"
-
-
--- Generic parsers
-
--- Make a parser recursive
--- Note that you might have to combine this with 'try' in some circumstances
--- Also note that 'sepBy' could also be used (probably in combination with 'liftM' in many
--- circumstances
-fixParser :: (a -> A.Parser a) -> a -> A.Parser a
-fixParser parser a = (parser a >>= fixParser parser) <|> return a
-
--- Make a parser that takes one parameter optional (in order to combine with monad bind)
-possibly :: (a -> A.Parser a) -> a -> A.Parser a
-possibly p a = p a <|> return a
-
--- Wrap the return value of a parser in a list
-oneToMany :: ([a] -> A.Parser a) -> [a] -> A.Parser [a]
-oneToMany p a = (:[]) <$> (p a)
-
--- Common parsing
-
-skipComments :: A.Parser ()
-skipComments = skipMany $
-  AC.skipSpace *> AC.char '#' *> (A.skipWhile $ not . AC.isEndOfLine)
-
--- AST parsing
-
-parseSymbol :: A.Parser Expression
-parseSymbol =
-  (AC.char '_' *> pure Top) <|> (Symbol <$> AC.takeWhile AC.isAlpha_ascii)
-
-parseSelector :: A.Parser ([Expression] -> ExpressionSegment)
-parseSelector =
-  (AC.char ':' *> return (Assert . Conjunct)) <|> (AC.char '.' *> return (Witness . Conjunct))
-
-parseArrow :: [Expression] -> A.Parser ExpressionSegment
-parseArrow e =
-  AC.string (pack "->") *> (return $ Declare e)
-
-parseCollection :: A.Parser [Expression]
-parseCollection =
-  AC.char '(' *> ((concat <$>) . many1) (parseExpression <* skipComments) <* AC.char ')'
-
--- Parse the codomain segment of a query
--- 1.  Can optionally start with a selector ':' or '.'
--- 2.1 Followed by a collection e.g. '(a -> b c:d.e)'
--- 2.2 Or a symbol e.g. 'a'
-
-parseQuerySegment :: A.Parser ExpressionSegment
-parseQuerySegment =
-  selector <*> (collection <|> symbol)
-  where
-    selector   = parseSelector <* skipComments
-    collection = parseCollection
-    symbol     = ((:[]) <$> parseSymbol)
-
--- Parse a query expression
--- 1.  Can optionally start with a selector ':' or '.'
--- 2.1 Followed by a collection e.g. '(a:b c -> d)'
--- 2.2 Or a simple Query expression e.g. 'a:b:(e -> f).c:(a:b c -> d)'
--- * No arrows outside of brackets
-
-parseQuerySegmentWith :: [Expression] -> A.Parser [Expression]
-parseQuerySegmentWith e =
-  (:[]) <$> flip Eval e <$> parseQuerySegment
-
-parseQueryExpr :: A.Parser [Expression]
-parseQueryExpr =
-  (segment <|> collection <|> symbol) >>= fixParser parseQuerySegmentWith
-  where
-    segment    = parseQuerySegmentWith [] :: A.Parser [Expression]
-    collection = parseCollection          :: A.Parser [Expression]
-    symbol     = ((:[]) <$> parseSymbol)  :: A.Parser [Expression]
-
-parseRelationExpr :: [Expression] -> A.Parser Expression
-parseRelationExpr e =
-  segment <*> (collection <|> expression)
-  where
-    segment    = Eval <$> (skipComments *> parseArrow e)
-    collection = parseCollection
-    expression = parseExpression
-
-parseExpression :: A.Parser [Expression]
-parseExpression =
-  skipComments *> (parseQueryExpr >>= possibly (oneToMany parseRelationExpr))
-
--- Main parser
-
-parseLangLang :: A.Parser [Expression]
-parseLangLang = concat <$> many parseExpression
-
--- Main loop
 
 main :: IO ()
 main = do
   putStrLn "Chomp v0.0.1 for LangLang"
-  ast <- (liftM $ A.parse parseLangLang) B.getContents
-  print ast
+  st <- (liftM $ parse parseLangLang) B.getContents
+  print st
   return ()
 
