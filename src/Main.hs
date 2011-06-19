@@ -31,6 +31,19 @@ data Expression = Symbol Token
                 | Top
                 | Eval ExpressionSegment [Expression]
 
+instance Show Expression where
+  show (Symbol t)     = show t
+  show Top            = "_"
+  show (Eval lhs rhs) =
+    case lhs of
+      Declare lhs            -> showExpr lhs ++ " -> " ++ showExpr rhs
+      Assert (Conjunct lhs)  -> showExpr lhs ++ ":" ++ showExpr rhs
+      Witness (Conjunct lhs) -> showExpr lhs ++ "." ++ showExpr rhs
+    where
+      showExpr []     = "(ERROR: EMPTY EXPRESSION LIST)"
+      showExpr (e:[]) = show e
+      showExpr (e:es) = (foldl (++) ('(':(show e)) $ map show es) ++ ")"
+
 
 -- Generic parsers
 
@@ -64,6 +77,10 @@ parseSymbol =
 parseSelector :: A.Parser ([Expression] -> ExpressionSegment)
 parseSelector =
   (AC.char ':' *> return (Assert . Conjunct)) <|> (AC.char '.' *> return (Witness . Conjunct))
+
+parseArrow :: [Expression] -> A.Parser ExpressionSegment
+parseArrow e =
+  AC.string (pack "->") *> (return $ Declare e)
 
 parseCollection :: A.Parser [Expression]
 parseCollection =
@@ -100,15 +117,11 @@ parseQueryExpr =
     collection = parseCollection          :: A.Parser [Expression]
     symbol     = ((:[]) <$> parseSymbol)  :: A.Parser [Expression]
 
-parseRelationSegment :: [Expression] -> A.Parser ExpressionSegment
-parseRelationSegment e =
-  AC.string (pack "->") *> (return $ Declare e)
-
 parseRelationExpr :: [Expression] -> A.Parser Expression
 parseRelationExpr e =
   segment <*> (collection <|> expression)
   where
-    segment    = Eval <$> (skipComments *> parseRelationSegment e)
+    segment    = Eval <$> (skipComments *> parseArrow e)
     collection = parseCollection
     expression = parseExpression
 
@@ -126,6 +139,7 @@ parseLangLang = concat <$> many parseExpression
 main :: IO ()
 main = do
   putStrLn "Chomp v0.0.1 for LangLang"
-  (liftM $ A.parse parseLangLang) B.getContents
+  ast <- (liftM $ A.parse parseLangLang) B.getContents
+  print ast
   return ()
 
