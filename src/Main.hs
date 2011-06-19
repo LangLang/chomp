@@ -86,18 +86,33 @@ type Token      = B.ByteString
                 | Relation Statement [Statement]
                 | QueryConjunct Statement [Statement]-}
 
-data Query = Conjunct Expression             -- (.Q)
+data Query = Conjunct [Expression]             -- (.Q)
 
-data ExpressionSegment = Declare Expression  -- (R->)
-                       | Assert Query        -- assert `dot` (.Q)   or    (:Q)
-                       | Witness Query       -- (.Q)
+data ExpressionSegment = Declare [Expression]  -- (R->)
+                       | Assert Query          -- assert `dot` (.Q)   or    (:Q)
+                       | Witness Query         -- (.Q)
 
 data Expression = Symbol Token
                 | Top
-                | Eval ExpressionSegment (Maybe Expression)
+                | Eval ExpressionSegment [Expression]
 
 
--- General parsing
+-- Generic parsers
+
+-- Make a parser recursive
+-- Note that you might have to combine this with 'try' in some circumstances
+-- Also note that 'sepBy' could also be used (probably in combination with 'liftM' in many
+-- circumstances
+fixParser :: (a -> A.Parser a) -> a -> A.Parser a
+fixParser parser a = (parser a >>= fixParser parser) <|> return a
+
+possibly :: (a -> A.Parser a) -> a -> A.Parser a
+possibly p a = p a <|> return a
+
+oneToMany :: ([a] -> A.Parser a) -> [a] -> A.Parser [a]
+oneToMany p a = (:[]) <$> (p a)
+
+-- Common parsing
 
 skipComments :: A.Parser ()
 skipComments = skipMany $
@@ -109,22 +124,28 @@ parseSymbol :: A.Parser Expression
 parseSymbol =
   (AC.char '_' *> pure Top) <|> (Symbol <$> AC.takeWhile AC.isAlpha_ascii)
 
-parseQuantifier :: A.Parser (Expression -> ExpressionSegment)
-parseQuantifier =
+parseSelector :: A.Parser ([Expression] -> ExpressionSegment)
+parseSelector =
   (AC.char ':' *> return (Assert . Conjunct)) <|> (AC.char '.' *> return (Witness . Conjunct))
 
-parseRelation :: A.Parser (Expression -> Maybe Expression -> Expression)
-parseRelation =
-  AC.string (pack "->") *> return (Eval . Declare)
+--parseRelation :: A.Parser (Expression -> Maybe Expression -> Expression)
+--parseRelation =
+--  AC.string (pack "->") *> return (Eval . Declare)
 
-parseSimpleExpr :: A.Parser Expression
-parseSimpleExpr =
-  (AC.char '(' *> parseExpression <* skipComments <* AC.char ')')
-  <|> parseSymbol
+
+-- Composites
+
+parseCollection :: A.Parser [Expression]
+parseCollection =
+  AC.char '(' *> ((concat <$>) . many1) (parseExpression <* skipComments) <* AC.char ')'
+
+{-
+--parseSimpleExpr :: A.Parser Expression
+--parseSimpleExpr = parseSymbol
 
 parseSimpleQueryExpr :: A.Parser ExpressionSegment
 parseSimpleQueryExpr =
-  (parseQuantifier <* skipComments) <*> parseSimpleExpr
+  (parseSelector <* skipComments) <*> parseSimpleExpr
 
 parseComplexQueryExpr :: Maybe Expression -> A.Parser Expression
 parseComplexQueryExpr e =
@@ -137,13 +158,52 @@ parseComplexQueryExpr e =
 --parseComplexQueryExpr e =
 --  parseOptionalQueryExpr
 
-parseQueryExpr :: A.Parser Expression
-parseQueryExpr = do
-  quantifier <- optional parseQuantifier <* skipComments
-  root <- if isJust quantifier
-    then (return $ Eval . (fromJust quantifier)) <*> parseSimpleExpr <*> return Nothing
-    else parseSimpleExpr
-  parseComplexQueryExpr $ Just root
+-- A simple query expression
+-- * Cannot start with ':' or '.'
+-- * Other than that, this is the meat of the query expression
+-}
+
+-- Parse the codomain segment of a query
+-- 1.  Can optionally start with a selector ':' or '.'
+-- 2.1 Followed by a collection e.g. '(a -> b c:d.e)'
+-- 2.2 Or a symbol e.g. 'a'
+
+parseQuerySegment :: A.Parser ExpressionSegment
+parseQuerySegment =
+  selector <*> (collection <|> symbol)
+  where
+    selector   = parseSelector <* skipComments
+    collection = parseCollection
+    symbol     = ((:[]) <$> parseSymbol)
+
+
+-- Query expression
+-- 1.  Can optionally start with a selector ':' or '.'
+-- 2.1 Followed by a collection e.g. '(a:b c -> d)'
+-- 2.2 Or a simple Query expression e.g. 'a:b:(e -> f).c:(a:b c -> d)'
+-- * No arrows outside of brackets
+
+parseQuerySegmentWith :: [Expression] -> A.Parser [Expression]
+parseQuerySegmentWith e =
+  (:[]) <$> flip Eval e <$> parseQuerySegment
+
+parseQueryExpr :: A.Parser [Expression]
+parseQueryExpr =
+  (segment <|> collection <|> symbol) >>= fixParser parseQuerySegmentWith
+  where
+    segment    = parseQuerySegmentWith [] :: A.Parser [Expression]
+    collection = parseCollection          :: A.Parser [Expression]
+    symbol     = ((:[]) <$> parseSymbol)  :: A.Parser [Expression]
+
+
+
+--  root <- if isJust selector
+--    then (return $ Eval . (fromJust selector)) <*> parseSimpleExpr <*> return Nothing
+--    else parseSimpleExpr
+--  parseComplexQueryExpr $ Just root
+--  where
+--    evalFrom selector = Eval. (fromJust selector)
+
 --  parseQueryExpr Nothing
 --  <|> (parseSimpleExpr >>= ((parseQueryExpr <|> ) . Just))
 
@@ -154,15 +214,21 @@ parseQueryExpr = do
 --parseTopQueryExpr =
 --  (parseQueryExpr Nothing >>= parseNextQueryExpr) <|> parseSimpleExpr
 
+parseRelationSegment :: [Expression] -> A.Parser ExpressionSegment
+parseRelationSegment e =
+  AC.string (pack "->") *> (return $ Declare e)
 
-
-parseRelationExpr :: Expression -> A.Parser Expression
+parseRelationExpr :: [Expression] -> A.Parser Expression
 parseRelationExpr e =
-  (AC.string (pack "->") *> return (Eval $ Declare e)) <*> optional parseExpression
+  segment <*> (collection <|> expression)
+  where
+    segment    = Eval <$> (skipComments *> parseRelationSegment e)
+    collection = parseCollection
+    expression = parseExpression
 
-parseExpression :: A.Parser Expression
+parseExpression :: A.Parser [Expression]
 parseExpression =
-  skipComments *> (parseQueryExpr >>= parseRelationExpr)
+  skipComments *> (parseQueryExpr >>= possibly (oneToMany parseRelationExpr))
 
 
 {-
@@ -211,8 +277,8 @@ parseLHS = Declare <$> parseSymbol
 parseRHS :: Connective -> A.Parser (Connective, Statement)
 parseRHS c = ((,) c) <$> parseStatement
 
-parseQuantifier :: A.Parser (Expression -> Statement)
-parseQuantifier =
+parseSelector :: A.Parser (Expression -> Statement)
+parseSelector =
   (AC.char ':' *> return Assert) <|> (AC.char '.' *> return Witness) <|> return Declare
 
 parseConnectedStatement :: A.Parser Statement
@@ -236,7 +302,7 @@ parseExpression =
 
 parseStatement :: A.Parser Statement
 parseStatement = skipComment *>
-  parseQuantifier <*> parseExpression
+  parseSelector <*> parseExpression
 -}
 
 --  ((AC.char '(' *> parseStatement <* skipComment <* AC.char ')')
@@ -258,7 +324,7 @@ parseStatement = do
 -}
 
 parseLangLang :: A.Parser [Expression]
-parseLangLang = many parseExpression
+parseLangLang = concat <$> many parseExpression
 
 -- Main loop
 main :: IO ()
