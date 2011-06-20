@@ -42,7 +42,7 @@ prop_parserresult (LLString s) =
     where
       result = parse parseLangLang $ pack s
 
--- reversing twice a finite list, is the same as identity
+-- Parse the string, serialize it and parse it again. Check if the syntax tree remains the same.
 prop_reflectparser (LLString s) =
     property $ succeeded
     where
