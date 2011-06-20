@@ -8,7 +8,7 @@ module Main( main ) where
 {-                                 MODULES                                  -}
 -- Standard
 import qualified Data.ByteString as B (getContents)
-import Data.Attoparsec (parse)
+import Data.Attoparsec (parse, parseTest)
 import Control.Monad
 
 -- Chomp
@@ -20,7 +20,9 @@ import Parser
 main :: IO ()
 main = do
   putStrLn "Chomp v0.0.1 for LangLang"
-  st <- (liftM $ parse parseLangLang) B.getContents
-  print st
+  --result <- (liftM $ parse parseLangLang) B.getContents
+  --print result
   return ()
+  (parseTest parseLangLang) =<< B.getContents
+
 

@@ -28,7 +28,7 @@ import SyntaxTree
 -- Also note that 'sepBy' could also be used (probably in combination with 'liftM' in many
 -- circumstances
 fixParser :: (a -> A.Parser a) -> a -> A.Parser a
-fixParser parser a = (parser a >>= fixParser parser) <|> return a
+fixParser parser a = (parser a >>= fixParser parser) <|> pure a
 
 -- Make a parser that takes one parameter optional (in order to combine with monad bind)
 possibly :: (a -> A.Parser a) -> a -> A.Parser a
