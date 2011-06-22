@@ -108,4 +108,5 @@ parseExpression =
 -- Main parser
 
 parseLangLang :: A.Parser [Expression]
-parseLangLang = concat <$> many parseExpression
+parseLangLang = parseExpression
+--parseLangLang = concat <$> many1 parseExpression
