@@ -36,7 +36,8 @@ instance Show LLString where
 
 instance Serial LLString where
   --series d = [LLString $ (take d $ repeat 'c')]
-  series d = map LLString $ take d $ term
+  --series d = map LLString $ take d $ term
+  series d = map LLString . concat $ take d $ repeat term
     where
       term          = querysegment
       querysegment  = [ s ++ i | i <- id, s <- selector ]

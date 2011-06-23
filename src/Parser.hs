@@ -41,11 +41,10 @@ oneToMany p a = (:[]) <$> (p a)
 -- Common parsing
 
 skipCommentLine :: A.Parser ()
-skipCommentLine = AC.char '#' *> ((A.skipWhile $ not . AC.isEndOfLine) <|> (AC.atEnd *> return ()))
+skipCommentLine = AC.char '#' *> (A.skipWhile $ not . AC.isEndOfLine) *> AC.atEnd *> return ()
 
 skipComments :: A.Parser ()
-skipComments = skipMany $
-  AC.skipSpace <|> skipCommentLine
+skipComments = skipMany (AC.skipSpace *> skipCommentLine)
 
 -- should this be "skip many spaces?"
 
@@ -114,8 +113,8 @@ parseExpression =
 -- Main parser
 --{-
 parseLangLang :: A.Parser [Expression]
---parseLangLang = parseExpression
-parseLangLang = (concat <$> (many parseExpression)) <* A.endOfInput
+parseLangLang = parseExpression
+--parseLangLang = (concat <$> (many parseExpression)) <* A.endOfInput
 --parseLangLang = concat <$> (skipComments *> (many parseExpression <* skipComments) <* A.endOfInput)
 --}
 
