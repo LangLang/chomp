@@ -35,7 +35,8 @@ instance Show LLString where
 -- Generators
 
 instance Serial LLString where
-  series d = map LLString $ take d term
+  --series d = [LLString $ (take d $ repeat 'c')]
+  series d = map LLString $ take d $ term
     where
       term          = querysegment
       querysegment  = [ s ++ i | i <- id, s <- selector ]
@@ -86,11 +87,12 @@ tests = [
 main  = mapM_ (\(s,a) -> printf "%-25s: " s >> a) tests
 
 -- Check whether the parser succeeded
+--{-
 prop_parsevalid :: LLString -> IO Bool
 prop_parsevalid (LLString s) =
   print s >>
   case result of
-    Partial f -> print "Partial " >> (checkResult $ f empty)
+    Partial f -> print "Partial" >> (checkResult $ f empty)
     otherwise -> checkResult result
   where
     result = parse parseLangLang $ pack s
@@ -99,13 +101,16 @@ prop_parsevalid (LLString s) =
         Fail rem ctx msg -> (print $ "Fail " ++ msg) >> return False
         Partial f        -> print "Impossible partial" >> return False
         Done rem st      -> print "Done" >> return True
-
+--}
 {-
 prop_parsevalid :: LLString -> Bool
 prop_parsevalid (LLString s) =
-  --isJust $ maybeResult result
-  --where
-  --  result = parse parseLangLang $ pack s -}
+  isJust $ maybeResult $ case result of
+    Partial f -> f empty
+    otherwise -> result
+  where
+    result = parse parseLangLang $ pack s
+--}
 
 -- Parse the string, serialize it and parse it again. Check if the syntax tree remains the same.
 prop_reflectparser (LLString s) =

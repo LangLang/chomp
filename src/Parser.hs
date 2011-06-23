@@ -40,9 +40,14 @@ oneToMany p a = (:[]) <$> (p a)
 
 -- Common parsing
 
+skipCommentLine :: A.Parser ()
+skipCommentLine = AC.char '#' *> ((A.skipWhile $ not . AC.isEndOfLine) <|> (AC.atEnd *> return ()))
+
 skipComments :: A.Parser ()
 skipComments = skipMany $
-  AC.skipSpace *> AC.char '#' *> (A.skipWhile $ not . AC.isEndOfLine)
+  AC.skipSpace <|> skipCommentLine
+
+-- should this be "skip many spaces?"
 
 -- AST parsing
 
@@ -103,10 +108,26 @@ parseRelationExpr e =
 
 parseExpression :: A.Parser [Expression]
 parseExpression =
-  skipComments *> (parseQueryExpr >>= possibly (oneToMany parseRelationExpr))
+  --skipComments *> (parseQueryExpr >>= possibly (oneToMany parseRelationExpr))
+  parseQueryExpr
 
 -- Main parser
-
+--{-
 parseLangLang :: A.Parser [Expression]
-parseLangLang = parseExpression
---parseLangLang = concat <$> many1 parseExpression
+--parseLangLang = parseExpression
+parseLangLang = (concat <$> (many parseExpression)) <* A.endOfInput
+--parseLangLang = concat <$> (skipComments *> (many parseExpression <* skipComments) <* A.endOfInput)
+--}
+
+
+-- Temporary example of the non-termination problem with end-of-input in attoparsec
+-- (Will be removed)
+{-
+parseLangLang :: A.Parser [Char]
+--parseLangLang = many $ AC.char 'c'
+--parseLangLang = many $ (AC.char 'c' <* A.endOfInput)
+--parseLangLang = (many $ AC.char 'c') <* A.endOfInput
+--parseLangLang = many $ (AC.char 'c' <* skipMany AC.skipSpace)
+--parseLangLang = many $ (AC.char 'c'  <* skipMany AC.skipSpace <* A.endOfInput)
+parseLangLang = (many $ (AC.char 'c'  <* skipMany AC.skipSpace)) <* A.endOfInput
+--}
