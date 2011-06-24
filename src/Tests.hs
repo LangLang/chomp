@@ -6,7 +6,7 @@ import Data.ByteString (ByteString, empty)
 import Data.ByteString.Char8 (pack)
 import Data.Maybe (isJust)
 import Data.Functor
-import Control.Monad (liftM)
+import Control.Monad (liftM, liftM2)
 import Text.Printf (printf)
 
 {-- QuickCheck
@@ -37,17 +37,24 @@ instance Show LLString where
 instance Serial LLString where
   --series d = [LLString $ (take d $ repeat 'c')]
   --series d = map LLString $ take d $ term
-  series d = map LLString . concat $ take d $ repeat term
+  series d = map LLString $ terms d
     where
-      term          = querysegment
-      querysegment  = [ s ++ i | i <- id, s <- selector ]
-      selector      = [":", ".", ""]
+      terms 0       = selectorid ++ id
+      terms d       = if even d
+                        then (liftM2 (++)) ((terms $ d - 2) ++ (terms $ d - 1)) selectorid
+                        else (liftM2 (++)) (terms $ d - 1) (selectorid ++ arrow ++ arrowid)
+      selectorid    = (liftM2 (++)) selector id
+      arrowid       = (liftM2 (++)) arrow id
+      selector      = [":", "."]
+      arrow         = ["->"]
       id            = map (:[]) ['a'..'d']
 
   coseries rs d  = [] -- We will not be using coseries
 
   --coseries rs d = [ \(LLString str) -> undefined
   --                | f <-  ]
+
+-- foldl (liftM2 (,)) ['a'] [['b']]
 
 -- Generators
 {-
@@ -121,6 +128,6 @@ prop_reflectparser (LLString s) =
     succeeded = isJust $ maybeResult result
 
 tests = [
-  ("parsevalid", smallCheck 5 prop_parsevalid),
+  ("parsevalid", smallCheckI prop_parsevalid),
   --("parseinvalid", quickCheck prop_parseinvalid),
   ("reflectparser", smallCheck 0 prop_reflectparser)]
