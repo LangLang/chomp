@@ -118,21 +118,24 @@ main  = mapM_ (\(s,a) -> printf "%-25s:\n" s >> a) tests
 
 -- Check whether the parser succeeded
 --{-
-prop_parsevalid :: LLString -> IO Bool
+--prop_parsevalid :: LLString -> IO Bool
 prop_parsevalid (LLString s) =
-  debugPrint s >>
-  case result of
-    Partial f -> debugPrint "Partial" >> (checkResult $ f empty)
-    otherwise -> checkResult result
+  output $ prepend (s ++ "   ") $
+    case result of
+      Partial f -> prepend "Partial-" $ checkResult $ f empty
+      otherwise -> checkResult result
   where
-    result = parse parseLangLang $ pack s
-    checkResult r =
+    result           = parse parseLangLang $ pack s
+    checkResult r    =
       case r of
-        Fail rem ctx msg -> (debugPrint $ "Fail " ++ msg) >> return False
-        Partial f        -> debugPrint "Impossible partial" >> return False
-        Done rem st      -> debugPrint "Done" >> return True
-    debugPrint = print s
-    --debugPrint = \str -> return ()
+        Fail rem ctx msg -> ("Fail " ++ msg, False)
+        Partial f        -> ("Impossible partial", False)
+        Done rem st      -> ("Done", True)
+    prepend s (s',r) = (s ++ s', r)
+    output (s,r)     = print s >> return r
+    --output (s,r)    = r
+
+
 
 --}
 {-
