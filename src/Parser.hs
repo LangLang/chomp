@@ -64,7 +64,8 @@ parseArrow e =
 
 parseCollection :: A.Parser [Expression]
 parseCollection =
-  AC.char '(' *> ((concat <$>) . many1) (parseExpression <* skipComments) <* AC.char ')'
+  --AC.char '(' *> ((concat <$>) . many) (parseExpression <* skipComments) <* AC.char ')'
+  AC.char '(' *> parseExpression <* AC.char ')'
 
 -- Parse the codomain segment of a query
 -- 1.  Can optionally start with a selector ':' or '.'

@@ -39,15 +39,37 @@ instance Serial LLString where
   --series d = map LLString $ take d $ term
   series d = map LLString $ terms d
     where
-      terms 0       = selectorid ++ id
-      terms d       = if even d
-                        then (liftM2 (++)) ((terms $ d - 2) ++ (terms $ d - 1)) selectorid
-                        else (liftM2 (++)) (terms $ d - 1) (selectorid ++ arrow ++ arrowid)
-      selectorid    = (liftM2 (++)) selector id
-      arrowid       = (liftM2 (++)) arrow id
+      -- Collections are made up out of terms
+      terms d = ("":selector) `combine` subterms d
+
+      -- Subterms never start with a selector
+      subterms d
+        | d == 0    = id
+        | even d    = (idselector `combine` (parenterms $ d - 1)) ++ ((pterms d) `combine` selectorid)
+        | otherwise = (idselector `combine` (parenterms $ d - 1)) ++ ((pterms d) `combine` (selectorid ++ arrow ++ arrowid))
+
+      -- pterms are the previous generation of subterms that may or may not be in parenthesis
+      pterms d
+        | d == 0    = []
+        | even d    = ((subterms \/ parenterms) $ d - 2) ++ ((subterms \/ parenterms) $ d - 1)
+        | otherwise = (subterms \/ parenterms) $ d - 1
+
+      -- parenterms are simple parenthesized terms e.g. (a:b->c)
+      -- Note that we don't bother with terms like "(a)"
+      -- (it's a valid parseable expression, but wastes too much testing time on something trivial)
+      parenterms d
+        | d == 0    = []
+        | otherwise = map ((++")").('(':)) $ subterms d
+
+      selectorid    = selector `combine` id
+      idselector    = id `combine` selector
+      arrowid       = arrow `combine` id
       selector      = [":", "."]
       arrow         = ["->"]
       id            = map (:[]) ['a'..'d']
+
+      -- Generates all combinations of two lists (keeping their order invariant unlike permutations)
+      combine       = liftM2 (++) :: [[a]] -> [[a]] -> [[a]]
 
   coseries rs d  = [] -- We will not be using coseries
 
