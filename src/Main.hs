@@ -14,6 +14,7 @@ import Control.Monad
 -- Chomp
 import SyntaxTree
 import Parser
+import OperationalSemantics
 
 {-                              IMPLEMENTATION                              -}
 
