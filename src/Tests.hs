@@ -38,7 +38,14 @@ instance Serial LLString where
   --series d = [LLString $ (take d $ repeat 'c')]
   --series d = map LLString $ take d $ term
   series d = map LLString $ terms d
+  --series d = map LLString $ collectterms d
     where
+      -- Full terms may contain collections
+      --fullterms d = terms d ++ parenthesize (terms d `combine` terms d)
+
+      -- collectterms are collections of terms
+      collectterms d = terms d ++ parenthesize (terms d `combine` (map (' ':) $ terms d))
+
       -- Collections are made up out of terms
       terms d = ("":selector) `combine` subterms d
 
@@ -54,13 +61,16 @@ instance Serial LLString where
         | even d    = ((subterms \/ parenterms) $ d - 2) ++ ((subterms \/ parenterms) $ d - 1)
         | otherwise = (subterms \/ parenterms) $ d - 1
 
+      -- cterms are collections of terms
+
       -- parenterms are simple parenthesized terms e.g. (a:b->c)
       -- Note that we don't bother with terms like "(a)"
       -- (it's a valid parseable expression, but wastes too much testing time on something trivial)
       parenterms d
         | d == 0    = []
-        | otherwise = map ((++")").('(':)) $ subterms d
+        | otherwise = parenthesize $ subterms d
 
+      parenthesize  = map ((++")").('(':))
       selectorid    = selector `combine` id
       idselector    = id `combine` selector
       arrowid       = arrow `combine` id
@@ -134,9 +144,6 @@ prop_parsevalid (LLString s) =
     prepend s (s',r) = (s ++ s', r)
     output (s,r)     = print s >> return r
     --output (s,r)    = r
-
-
-
 --}
 {-
 prop_parsevalid :: LLString -> Bool
