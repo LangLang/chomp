@@ -13,6 +13,7 @@ import qualified Data.ByteString as B
 type Token      = B.ByteString
 
 data Query = Conjunct [Expression]             -- (.Q)
+           | Complement [Expression]           -- (/Q)
 
 data ExpressionSegment = Declare [Expression]  -- (R->)
                        | Assert Query          -- assert `dot` (.Q)   or    (:Q)
@@ -30,6 +31,8 @@ instance Show Expression where
       Declare lhs            -> showExpr lhs ++ " -> " ++ showExpr rhs
       Assert (Conjunct lhs)  -> showExpr lhs ++ ":" ++ showExpr rhs
       Witness (Conjunct lhs) -> showExpr lhs ++ "." ++ showExpr rhs
+      Assert (Complement lhs)  -> showExpr lhs ++ "\\\\" ++ showExpr rhs
+      Witness (Complement lhs) -> showExpr lhs ++ "\\" ++ showExpr rhs
     where
       showExpr []     = "(ERROR: EMPTY EXPRESSION LIST)"
       showExpr (e:[]) = show e

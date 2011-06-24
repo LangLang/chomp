@@ -74,7 +74,7 @@ instance Serial LLString where
       selectorid    = selector `combine` id
       idselector    = id `combine` selector
       arrowid       = arrow `combine` id
-      selector      = [":", "."]
+      selector      = [":", ".", "\\\\", "\\"]
       arrow         = ["->"]
       id            = map (:[]) ['a'..'c']
 
@@ -142,7 +142,7 @@ prop_parsevalid (LLString s) =
         Partial f        -> ("Impossible partial", False)
         Done rem st      -> ("Done", True)
     prepend s (s',r) = (s ++ s', r)
-    output (s,r)     = print s >> return r
+    output (s,r)     = putStrLn s >> return r
     --output (s,r)    = r
 --}
 {-
