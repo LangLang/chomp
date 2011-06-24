@@ -124,7 +124,7 @@ tests = [
 
 -}
 
-main  = mapM_ (\(s,a) -> printf "%-25s:\n" s >> a) tests
+main  = mapM_ (\(s,a) -> putStrLn s >> a) tests
 
 -- Check whether the parser succeeded
 --{-
