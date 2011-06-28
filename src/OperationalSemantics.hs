@@ -41,26 +41,10 @@ type Context = [[Expression]]
 data Result a = Success [a] | Error
 type EvalResult = Result Expression
 
---instance Functor Result where
---  fmap _ Error          = Error
---  fmap f (Success exp)  = Success (f exp)
---instance Monad Result where
---  (Success exp) >>= f   = mapResult f exp
---  Error  >>= _          = Error
---  (Success _) >> r      = r
---  Error  >>  _          = Error
---  return                = Success . (:[])
---  fail _                = Error
-
--- Map a evaluation function over a set of expression and the fold the list into a Result
--- This function short-circuits as soon as an error is reached
-foldEval :: (Expression -> EvalResult) -> [Expression] -> EvalResult
-foldEval f (e:es) =
-  case f e of
-    (Success exp') -> case foldEval f es of
-      (Success exp'') -> Success (exp' ++ exp'')
-      Error       -> Error
-    Error -> Error
+-- Convert an empty list to an "error" result and a non-empty list to "success"
+listToResult :: [a] -> Result a
+listToResult [] = Error
+listToResult l  = Success l
 
 -- Auxiliary functions
 
@@ -76,13 +60,6 @@ conjunctContext (c:cs) exp =
   if matches /= [] then matches else conjunctContext cs exp
   where
     matches = conjunctCollection c exp
-
-conjunctContextAssert :: Context -> Expression -> EvalResult
-conjunctContextAssert ctx exp =
-  -- Note that exp can't be bottom, bottom can only be expressed as an empty list of expressions []
-  if matches /= [] then Success matches else Error
-  where
-    matches = conjunctContext ctx exp
 
 -- Evaluates the expression inside the stack of contexts given
 eval :: Context -> Expression -> EvalResult
@@ -103,7 +80,7 @@ eval ctx exp@(Eval (Declare exp0) exp1)
 -}
 
 eval ctx exp@(Eval (Assert (Conjunct exp1)) [])
-  | True = foldEval (conjunctContextAssert ctx) exp1
+  | True = listToResult $ concat $ map (conjunctContext ctx) exp1
 
 {-
 ctx |- exp1:exp2
