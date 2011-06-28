@@ -23,6 +23,7 @@ import Test.SmallCheck
 -- Chomp
 import SyntaxTree
 import Parser
+import OperationalSemantics
 
 {-                              IMPLEMENTATION                              -}
 
