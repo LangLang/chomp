@@ -32,6 +32,14 @@ newtype LLString = LLString String
 instance Show LLString where
   show (LLString str) = show str
 
+-- Unit testing definitions
+
+data CheckResult = Success { arguments :: [String] }
+                 | Failure { arguments :: [String] }
+                 | NotSure { arguments :: [String] }
+
+unitCheck :: a -> IO ()
+unitCheck f = putStrLn "TODO"
 
 -- Generators
 
@@ -84,48 +92,7 @@ instance Serial LLString where
 
   coseries rs d  = [] -- We will not be using coseries
 
-  --coseries rs d = [ \(LLString str) -> undefined
-  --                | f <-  ]
-
--- foldl (liftM2 (,)) ['a'] [['b']]
-
--- Generators
-{-
-
-instance Arbitrary LLString where
-  arbitrary =
-    LLString <$> randomQuery
-    where
-      randomQuery = oneof [randomToken, randomSelector]
-      randomToken = listOf1 $ e lements $ '_':['a'..'z']
-      randomSelector = elements [".", ":"]
-      randomOperator = elements [".", ":", "->"]
-
--- Tests
-
-main  = mapM_ (\(s,a) -> printf "%-25s: " s >> a) tests
-
--- Check whether the parser succeeded
-prop_parserresult (LLString s) =
-    property $ isJust $ maybeResult result
-    where
-      result = parse parseLangLang $ pack s
-
--- Parse the string, serialize it and parse it again. Check if the syntax tree remains the same.
-prop_reflectparser (LLString s) =
-    property $ succeeded
-    where
-      result = parse parseLangLang $ pack s
-      succeeded = isJust $ maybeResult result
-
-
-tests = [
-  ("parserresult", quickCheck prop_parserresult),
-  ("reflectparser", quickCheck prop_reflectparser)]
-
--}
-
-main  = mapM_ (\(s,a) -> putStrLn s >> a) tests
+-- Parser tests
 
 -- Check whether the parser succeeded
 --{-
@@ -144,7 +111,6 @@ prop_parsevalid (LLString s) =
         Done rem st      -> ("Done", True)
     prepend s (s',r) = (s ++ s', r)
     output (s,r)     = putStrLn s >> return r
-    --output (s,r)    = r
 --}
 {-
 prop_parsevalid :: LLString -> Bool
@@ -163,7 +129,21 @@ prop_reflectparser (LLString s) =
     result = parse parseLangLang $ pack s
     succeeded = isJust $ maybeResult result
 
+-- Operational tests
+
+{- TODO
+prop_evalwithconjunct :: Context -> Expression -> Expression -> CheckResult
+prop_evalwithconjunct ctx ex0@(Symbol t0) ex1@(Symbol t1) = NotSure $ map show [ctx, ex0, ex1]
+prop_evalwithconjunct ctx ex0             ex1             = NotSure $ map show [ctx, ex0, ex1]
+--}
+
+-- Dispatcher
+
+main  = mapM_ (\(s,a) -> putStrLn s >> a) tests
+
 tests = [
   ("parsevalid", smallCheckI prop_parsevalid),
   --("parseinvalid", quickCheck prop_parseinvalid),
-  ("reflectparser", smallCheck 0 prop_reflectparser)]
+  ("parsereflect", smallCheck 0 prop_reflectparser)
+  --("evalwithconjunct", unitCheck prop_evalwithconjunct),
+  ]
