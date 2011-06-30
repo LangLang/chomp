@@ -70,9 +70,34 @@ import SyntaxTree
 
 -- Top level semantics
 
+-- A scope is a collection of expressions where one expression is singled out as the "focus".
+-- Scope variable will typically be used to construct a Context which is a stack of scopes.
+-- Many operations must ignore the expression that has "focus", so the Scope type provides higher
+-- order functions that eliminate the need to deal with the focus expression directly.
+-- Scope is implemented using integer to index the focus and a list of expressions
+
+type Scope = (Int, [Expression])
+
+scopeFocus :: Scope -> Expression
+scopeFocus (i,exs) = exs !! i
+
+scopeEnv :: Scope -> [Expression]
+scopeEnv (i,[])  = []
+scopeEnv (i,exs) = take i exs ++ drop (i+1) exs
+
+scopeMap :: (Expression -> b) -> Scope -> [b]
+scopeMap f s = map f $ scopeEnv s
+
+scopeEmpty :: Scope
+scopeEmpty = (0,[])
+
 -- A context is the path (stack of arrow declarations) leading to the current computation
+-- The path consists of a list of scopes, each of which is a collection of expression plus a focus
 -- Note that the top of the stack is the head of the list
-type Context = [[Expression]]
+type Context = [Scope]
+
+contextEmpty :: Context
+contextEmpty = [scopeEmpty]
 
 --instance Show Context where
 --  show c = ""
@@ -150,21 +175,12 @@ evalWithConjunct ctx ex0@(Eval (Declare ex00) ex01) ex1   = error "TODO: ..... N
 -- TODO: NOT SURE IF THIS SHOULD RETURN A RESULT OR JUST A LIST OF EXPRESSIONS...
 conjunctContext :: Context -> Expression -> [Expression]
 conjunctContext []         _  = []
-conjunctContext [c]        ex = conjunctCollection [] c ex
+conjunctContext [c]        ex = conjunctCollection contextEmpty (scopeEnv c) ex
 conjunctContext ctx@(c:cs) ex = if matches /= [] then matches else conjunctContext cs ex
   where
-    matches = conjunctCollection ctx c ex   -- TODO: IS THIS THE CORRECT CONTEXT TO PASS THROUGH?
-                                            --       POSSIBLY NEED TO LOOK AT THE CODE IN CONJUNCT
-                                            --       TO ENSURE CIRCULAR REFERENCES DO NOT TAKE PLACE
-
--- Find an expression in the same context that it stated
--- TODO: How do we guarantee that the expression is not matched to itself?
---       This function probably needs an index to be passed through with the expression so as to
---       avoid circular matches.
---       However perhaps there is a more clever solution using zippers or something similar that
---       will improve the overall design
-conjunctContextContaining :: Context -> Expression -> [Expression]
-conjunctContextContaining (c:cs) ex = error "TODO: ..... TOP-LEVEL CONJUNCT. YET TO BE IMPLEMENTED."
+    matches = conjunctCollection ctx (scopeEnv c) ex   -- TODO: IS THIS THE CORRECT CONTEXT TO PASS THROUGH?
+                                                       --       POSSIBLY NEED TO LOOK AT THE CODE IN CONJUNCT
+                                                       --       TO ENSURE CIRCULAR REFERENCES DO NOT TAKE PLACE
 
 -- Evaluates the expression inside the stack of contexts given
 eval :: Context -> Expression -> EvalResult
