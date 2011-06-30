@@ -1,3 +1,5 @@
+--{-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
+
 module OperationalSemantics where
 
 {-                               DOCUMENTATION                              -}
@@ -72,6 +74,9 @@ import SyntaxTree
 -- Note that the top of the stack is the head of the list
 type Context = [[Expression]]
 
+--instance Show Context where
+--  show c = ""
+
 -- The result of a computation. Allows eval to return Error
 -- type Result = Maybe [Expression]
 data Result a = Success [a] | Error
@@ -114,7 +119,7 @@ foldEval f (e:es) =
 -- TODO: NOT SURE IF THIS SHOULD RETURN A RESULT OR JUST A LIST OF EXPRESSIONS...
 conjunctCollection :: Context -> [Expression] -> Expression -> [Expression]
 conjunctCollection ctx []     ex = []
-conjunctCollection ctx (e:[]) ex = evalWithConjunct ctx e ex
+conjunctCollection ctx [e]    ex = evalWithConjunct ctx e ex
 conjunctCollection ctx (e:es) ex = (evalWithConjunct ctx e ex) ++ (conjunctCollection ctx es ex)
 
 -- Evaluate the left-hand side of a conjunct in order to match it to the right-hand side
@@ -129,10 +134,10 @@ evalWithConjunct ctx _           (Eval (Witness _) [])    = error "IMPOSSIBLE ER
 evalWithConjunct ctx _           (Eval (Assert _) ex1)    = error "IMPOSSIBLE ERROR: Right-hand query should have been evaluated before the left-hand query is evaluated."
 evalWithConjunct ctx _           (Eval (Witness _) ex1)   = error "IMPOSSIBLE ERROR: Right-hand query should have been evaluated before the left-hand query is evaluated."
 evalWithConjunct ctx ex0         Top                      = uncheckedEval ctx ex0
-evalWithConjunct ctx (Symbol t0) ex1@(Symbol t1)          = if t0 == t1 then ex1:[] else []
+evalWithConjunct ctx (Symbol t0) ex1@(Symbol t1)          = if t0 == t1 then [ex1] else []
 evalWithConjunct ctx (Symbol t0) ex1@(Eval (Declare _) _) = []
-evalWithConjunct ctx Top         ex1                      = ex1:[]
-evalWithConjunct ctx Top         ex1                      = ex1:[]
+evalWithConjunct ctx Top         ex1                      = [ex1]
+evalWithConjunct ctx Top         ex1                      = [ex1]
 
 ----------------- BUSY HERE: These are the more complicated cases...
 evalWithConjunct ctx ex0@(Eval (Declare ex00) ex01) ex1   = error "TODO: ..... NOT SURE YET WHAT TO DO HERE"
@@ -144,11 +149,11 @@ evalWithConjunct ctx ex0@(Eval (Declare ex00) ex01) ex1   = error "TODO: ..... N
 -- will simply match itself, causing an infinite loop)
 -- TODO: NOT SURE IF THIS SHOULD RETURN A RESULT OR JUST A LIST OF EXPRESSIONS...
 conjunctContext :: Context -> Expression -> [Expression]
-conjunctContext []         exp = []
-conjunctContext (c:[])     exp = conjunctCollection [] c exp
-conjunctContext ctx@(c:cs) exp = if matches /= [] then matches else conjunctContext cs exp
+conjunctContext []         _  = []
+conjunctContext [c]        ex = conjunctCollection [] c ex
+conjunctContext ctx@(c:cs) ex = if matches /= [] then matches else conjunctContext cs ex
   where
-    matches = conjunctCollection ctx c exp  -- TODO: IS THIS THE CORRECT CONTEXT TO PASS THROUGH?
+    matches = conjunctCollection ctx c ex   -- TODO: IS THIS THE CORRECT CONTEXT TO PASS THROUGH?
                                             --       POSSIBLY NEED TO LOOK AT THE CODE IN CONJUNCT
                                             --       TO ENSURE CIRCULAR REFERENCES DO NOT TAKE PLACE
 
@@ -159,58 +164,58 @@ conjunctContext ctx@(c:cs) exp = if matches /= [] then matches else conjunctCont
 --       However perhaps there is a more clever solution using zippers or something similar that
 --       will improve the overall design
 conjunctContextContaining :: Context -> Expression -> [Expression]
-conjunctContextContaining (c:cs) exp = error "TODO: ..... TOP-LEVEL CONJUNCT. YET TO BE IMPLEMENTED."
+conjunctContextContaining (c:cs) ex = error "TODO: ..... TOP-LEVEL CONJUNCT. YET TO BE IMPLEMENTED."
 
 -- Evaluates the expression inside the stack of contexts given
 eval :: Context -> Expression -> EvalResult
 
 {-
-ctx |- exp0 -> exp1
+ctx |- exs0 -> exs1
 -------------------
-ctx |- exp0 -> exp1
+ctx |- exs0 -> exs1
 -}
 
-eval ctx exp@(Eval (Declare exp0) exp1)
-  | True = Success (exp:[])
+eval ctx ex@(Eval (Declare exs0) exs1)
+  | True = Success [ex]
 
 {-
-  (cs -> c) |- :exp1
+  (cs -> c) |- :exs1
   ------------------
-       c:exp1
+       c:exs1
 -}
 
-eval ctx exp@(Eval (Assert (Conjunct exp1)) [])
-  | True = listToResult $ concat $ map (conjunctContext ctx) exp1
+eval ctx ex@(Eval (Assert (Conjunct exs1)) [])
+  | True = listToResult $ concat $ map (conjunctContext ctx) exs1
 
 {-
-ctx |- exp1:exp2
+ctx |- exs1:exs2
 -----------------
-ctx |- .exp1:exp2
+ctx |- .exs1:exs2
 -----------------
-(ctx `.` exp1):exp2
+(ctx `.` exs1):exs2
 -}
 
-eval ctx exp@(Eval (Witness (Conjunct exp1)) [])
-  | True =  Success $ concat $ map (conjunctContext ctx) exp1
+eval ctx ex@(Eval (Witness (Conjunct exs1)) [])
+  | True =  Success $ concat $ map (conjunctContext ctx) exs1
 
 {-
-ctx |- exp0 . exp1
+ctx |- exs0 . exs1
 ------------------
 ctx |- ????????
 
-(Eval (Witness (Conjunct exp0) exp1)
+(Eval (Witness (Conjunct exs0) exs1)
 
-ctx |- exp0 \ exp1
+ctx |- exs0 \ exs1
 ------------------
 ctx |- ????????
 
-(Eval (Assert  (Complement exp0) exp1)
+(Eval (Assert  (Complement exs0) exs1)
 
-ctx |- exp0 \\ exp1
+ctx |- exs0 \\ exs1
 ------------------
 ctx |- ????????
 
-(Eval (Witness (Complement exp0) exp1)
+(Eval (Witness (Complement exs0) exs1)
 
 -}
 
@@ -221,4 +226,4 @@ ctx |- ????????
 --      when it has an error... for now we're just assuming this is the correct implementation for
 --      simplicity. Will come back to it later.
 uncheckedEval :: Context -> Expression -> [Expression]
-uncheckedEval ctx exp = resultToList $ eval ctx exp
+uncheckedEval ctx ex = resultToList $ eval ctx ex
