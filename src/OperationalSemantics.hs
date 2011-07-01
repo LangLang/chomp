@@ -40,6 +40,17 @@ module OperationalSemantics where
       * r             A result
       * t             A token
 
+
+
+
+
+      TODO: <c>  means "environment of c" (i.e. excluding the "focus expression")
+            ^c^  means "focus of c" (i.e. the domain of the "focus expression")
+            'c'  means "'c' is a token/atom"
+
+
+
+
     BUGS:
       + (2011-06-28)
         Currently it's not too clear whether the matching code which must evaluate expressions
@@ -194,25 +205,160 @@ ctx |- exs0 -> exs1
 eval ctx ex@(Eval (Declare exs0) exs1)
   | True = Success [ex]
 
+
 {-
-  (cs -> c) |- :exs1
+  Note) When assuming nothing (no context/scope given), we can rewrite the rule without a turnstile.
+        (This is just convenient, it has no effect on the actual operational semantics)
+
+        () |- exs0.exs1
+        ----------------
+            exs0.exs1
+
+  2) Selecting any collection of expressions from an atom produces bottom (nothing).
+     ('e0' is an atom/token and () is bottom)
+
+        'e0'.exs1
+        ---------
+           ()
+
+  3) Selecting top from a declaration returns the right-hand side of the arrow, (TODO: in the
+     context of the left-hand side  ????)
+     (_ is top)
+
+        (ex0 -> rhs)._                          (ex0 -> rhs0)._
+        --------------           or             ---------------
+             rhs                                  ex0 |- rhs0
+
+  4) Selecting a collection of expressions from another collection is equivalent to selecting the
+     (right-hand side) collection from each element of the left-hand side collection.
+     And vica versa...
+
+           (e0 es0).exs1
+        -------------------
+        (e0.exs1  es0.exs1)
+
+          ex0.(e1 es1)
+        -----------------
+        (ex0.e1  ex0.es1)
+
+  5) Selecting an expression from a declaration matches the right-hand side of the expression
+     against the expression)
+     (rhs can can either an atomic token like 'e' or a declaration
+     like ('a' -> ('b' -> ('c' 'd')) -> 'e'))
+     (notrhs is an atomic token or a declaration that doesn't match the lhs)
+
+        (ex0 -> (rhs -> rhs0)).rhs
+        --------------------------
+               rhs -> rhs0
+
+        (ex0 -> (rhs -> rhs0)).notrhs
+        -----------------------------
+                  ()
+
+        (ex0 -> rhs).rhs
+        ----------------
+              rhs
+
+        (ex0 -> rhs).notrhs
+        -------------------
+                ()
+
+  Note) It is possible formulate an alternative semantics using anonymous "closures" as follows:
+        (This is nice for studying the semantics from a different view point but unnecessary for
+        implementation) (TODO: but also see 3 to 5, should there be context?)
+
+        {exs0}._
+        --------
+          exs0
+
+             {e0 es0}.exs1
+        -----------------------
+        ({e0}.exs1  {es0}.exs1)
+
+           {e0}.(e1 es1)
+        -------------------
+        ({e0}.e1  {e0}.es1)
+
+        {ex -> rhs}.ex
+        ----------------
+           ex -> rhs
+
+        {ex}.ex
+        -------
+          ex
+
+        (ex0 -> rhs)._
+        -------------
+             rhs
+
+        (ex0 -> rhs).exs1
+        ----------------
+           {rhs}.exs1
+
+
+        (Lemma)
+
+        {'e' -> rhs}.'e'
+        ----------------
+           'e' -> rhs
+
+        {'e'}.'e'
+        ---------
+           'e'
+-}
+
+eval ctx@[] ex@(Eval (Witness (Conjunct exs1)) exs0)
+  | True = ----- TODO
+
+
+{-
+
+  1)       c |- .exs1
+        ----------------
+        () |- {<c>}.exs1
+
+  2)           c1 |- (c0 |- .exs1)
+        -------------------------------
+        () |- ({<c1>}.^c0^.exs1  {<c0>}.exs1)
+
+
+  3)            (cs |- (c1 |- (c0 |- .exs1))
+        -------------------------------------------
+        () |- (cs |- (c0 |- .exs1)  (c1 |- (c0 |- .exs1))
+
+
+  Note) (c -> .exs)._
+        -------------
+          c |- .exs
+-}
+
+eval ctx@[c] ex@(Eval (Witness (Conjunct exs1)) [])
+  | True = eval [] (Eval (Witness (Conjunct exs1)) $ scopeEnv c)
+
+eval ctx@(c:cs) ex@(Eval (Witness (Conjunct exs1)) [])
+  | True = eval ctx (Eval (Witness (Conjunct exs1)) $ scopeEnv c)
+
+--        Success $
+--          concat $ map (conjunctCollection ctx $ scopeEnv c) exs1
+--            ++ uncheckedEval (cs
+
+{-
+  (cs |- c) |- :exs1
   ------------------
-       c:exs1
+    cs |- c:exs1
 -}
 
-eval ctx ex@(Eval (Assert (Conjunct exs1)) [])
-  | True = listToResult $ concat $ map (conjunctContext ctx) exs1
+eval ctx@(c:cs) ex@(Eval (Assert (Conjunct exs1)) [])
+  | True = listToResult $ uncheckedEval ctx ex
 
 {-
-ctx |- exs1:exs2
+ctx |- exs0.exs1
 -----------------
-ctx |- .exs1:exs2
------------------
-(ctx `.` exs1):exs2
+?????ctx |- (exs0 |- .exs1)??
 -}
 
-eval ctx ex@(Eval (Witness (Conjunct exs1)) [])
-  | True =  Success $ concat $ map (conjunctContext ctx) exs1
+eval ctx ex@(Eval (Witness (Conjunct exs1)) exs0)
+  | True = Success $ concat $ map (conjunctContext ctx) exs0
 
 {-
 ctx |- exs0 . exs1
