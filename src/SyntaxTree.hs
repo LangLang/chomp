@@ -40,3 +40,4 @@ instance Show Expression where
       showExpr []     = "(ERROR: EMPTY EXPRESSION LIST)"
       showExpr (e:[]) = show e
       showExpr (e:es) = (foldl (++) ('(':(show e)) $ map show es) ++ ")"
+

@@ -13,10 +13,17 @@ module OperationalSemantics where
       The assumptions placed before the turnstile |- is exactly the context
       in which a computation takes place.
       Usually this will be written 'ctx |-', but sometimes we will use the
-      notation '(cs -> c) |-' similar to (and corresponding, in the code, with)
+      notation '(cs |- c) |-' similar to (and corresponding in the code, with)
       haskell's pattern matching '(c:cs)' notation.
-      When written in this way, c refers to the head of a chain of arrows and
-      may be selected from like a regular symbol e.g. 'c:exp'.
+      When written in this way, c refers to the head of a chain of arrows that
+      have been queried.
+
+      |- implies a kind of lazy evaluate-by-need strategy... (TODO)
+
+
+
+
+
 
       There is one special consideration however, the context listed before
       the turnstile does not include the expression on the right of the
@@ -28,10 +35,6 @@ module OperationalSemantics where
       * conjunctContext
       * conjunctCollection
 
-      For the purposes of documenting the semantics '^' is a special pseudo-
-      operator looking up a variable in the context similar to how the
-      standard '.' operator works, but recursively in the scope. (Thus the
-      documentation for the semantics might have expressions like 'ctx ^ exp'.
 
       In addition, the following conventions are typically used for variable names:
       * ex            A single expression
@@ -41,12 +44,6 @@ module OperationalSemantics where
       * t             A token
 
 
-
-
-
-      TODO: <c>  means "environment of c" (i.e. excluding the "focus expression")
-            ^c^  means "focus of c" (i.e. the domain of the "focus expression")
-            'c'  means "'c' is a token/atom"
 
 
 
@@ -207,6 +204,9 @@ eval ctx ex@(Eval (Declare exs0) exs1)
 
 
 {-
+  Evaluate conjunct queries outside of any context
+  ------------------------------------------------
+
   Note) When assuming nothing (no context/scope given), we can rewrite the rule without a turnstile.
         (This is just convenient, it has no effect on the actual operational semantics)
 
@@ -225,9 +225,18 @@ eval ctx ex@(Eval (Declare exs0) exs1)
      context of the left-hand side  ????)
      (_ is top)
 
-        (ex0 -> rhs)._                          (ex0 -> rhs0)._
-        --------------           or             ---------------
-             rhs                                  ex0 |- rhs0
+        (ex0 -> rhs)._
+        --------------
+             rhs
+
+     Note: This could have been
+
+        (ex0 -> rhs0)._
+        ---------------
+          ex0 |- rhs0
+
+    however, with "top" everythings is already selected so there is no need to carry the scope
+    "ex0 |-"
 
   4) Selecting a collection of expressions from another collection is equivalent to selecting the
      (right-hand side) collection from each element of the left-hand side collection.
@@ -249,7 +258,7 @@ eval ctx ex@(Eval (Declare exs0) exs1)
 
         (ex0 -> (rhs -> rhs0)).rhs
         --------------------------
-               rhs -> rhs0
+             ex0 |- rhs -> rhs0
 
         (ex0 -> (rhs -> rhs0)).notrhs
         -----------------------------
@@ -257,7 +266,7 @@ eval ctx ex@(Eval (Declare exs0) exs1)
 
         (ex0 -> rhs).rhs
         ----------------
-              rhs
+           ex0 |- rhs
 
         (ex0 -> rhs).notrhs
         -------------------
@@ -296,7 +305,7 @@ eval ctx ex@(Eval (Declare exs0) exs1)
            {rhs}.exs1
 
 
-        (Lemma)
+  Note Lemma) This works very simply for atomic tokens
 
         {'e' -> rhs}.'e'
         ----------------
@@ -312,17 +321,28 @@ eval ctx@[] ex@(Eval (Witness (Conjunct exs1)) exs0)
 
 
 {-
+  Evaluate conjunct queries against a context
+  -------------------------------------------
 
-  1)       c |- .exs1
+  1) Query against a single scope
+
+           c |- .exs1
         ----------------
-        () |- {<c>}.exs1
+        c |- noScope({<c>}.exs1)
 
-  2)           c1 |- (c0 |- .exs1)
+  2) Query against two levels of scope
+
+               c1 |- (c0 |- .exs1)
         -------------------------------
+
+        TODO.....
+
         () |- ({<c1>}.^c0^.exs1  {<c0>}.exs1)
 
 
-  3)            (cs |- (c1 |- (c0 |- .exs1))
+  3) Query against a stack of scopes
+
+                (cs |- (c1 |- (c0 |- .exs1))
         -------------------------------------------
         () |- (cs |- (c0 |- .exs1)  (c1 |- (c0 |- .exs1))
 
