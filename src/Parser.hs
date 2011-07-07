@@ -58,7 +58,7 @@ parseSelector :: A.Parser ([Expression] -> ExpressionSegment)
 parseSelector =
   (AC.char ':' *> return (Assert . Conjunct)) <|>
   (AC.char '.' *> return (Witness . Conjunct)) <|>
-  (AC.char '\\' *> ((AC.char '\\' *> return (Assert . Complement)) <|> return (Assert . Complement)))
+  (AC.char '~' *> ((AC.char '~' *> return (Assert . Complement)) <|> return (Assert . Complement)))
 
 parseArrow :: [Expression] -> A.Parser ExpressionSegment
 parseArrow e =

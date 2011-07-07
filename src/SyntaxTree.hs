@@ -8,6 +8,7 @@ module SyntaxTree where
 {-                                 MODULES                                  -}
 -- Standard
 import qualified Data.ByteString as B
+import Data.ByteString.Char8 (pack)
 
 {-                              IMPLEMENTATION                              -}
 type Token      = B.ByteString
@@ -34,9 +35,11 @@ instance Show Expression where
       Declare lhs            -> showExpr lhs ++ " -> " ++ showExpr rhs
       Assert (Conjunct lhs)  -> showExpr lhs ++ ":" ++ showExpr rhs
       Witness (Conjunct lhs) -> showExpr lhs ++ "." ++ showExpr rhs
-      Assert (Complement lhs)  -> showExpr lhs ++ "\\\\" ++ showExpr rhs
-      Witness (Complement lhs) -> showExpr lhs ++ "\\" ++ showExpr rhs
+      Assert (Complement lhs)  -> showExpr lhs ++ "~~" ++ showExpr rhs
+      Witness (Complement lhs) -> showExpr lhs ++ "~" ++ showExpr rhs
     where
       showExpr []     = "(ERROR: EMPTY EXPRESSION LIST)"
       showExpr (e:[]) = show e
       showExpr (e:es) = (foldl (++) ('(':(show e)) $ map show es) ++ ")"
+
+symbolLambda = Symbol $ pack "\\"
