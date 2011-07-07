@@ -23,7 +23,6 @@ data ExpressionSegment = Declare [Expression]  -- (R->)
 
 data Expression = Symbol Token
                 | Top
-                | Bottom
                 | Eval ExpressionSegment [Expression]
                 deriving (Eq)
 
