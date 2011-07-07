@@ -221,22 +221,13 @@ eval ctx ex@(Eval (Declare exs0) exs1)
         ---------
            ()
 
-  3) Selecting top from a declaration returns the right-hand side of the arrow, (TODO: in the
-     context of the left-hand side  ????)
+  3) Selecting top from a declaration returns the right-hand side of the arrow in the
+     context of the left-hand side.
      (_ is top)
-
-        (ex0 -> rhs)._
-        --------------
-             rhs
-
-     Note: This could have been
 
         (ex0 -> rhs0)._
         ---------------
           ex0 |- rhs0
-
-    however, with "top" everythings is already selected so there is no need to carry the scope
-    "ex0 |-"
 
   4) Selecting a collection of expressions from another collection is equivalent to selecting the
      (right-hand side) collection from each element of the left-hand side collection.
