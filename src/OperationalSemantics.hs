@@ -212,13 +212,13 @@ eval :: Context -> Expression -> EvalResult
    -------------------------------------
    Only queries can be evaluated
 
-   1) Evaluate a normal arrow
+   1.1) Evaluate a normal arrow
 
         ctx |- exs0 -> exs1
         -------------------
         ctx |- exs0 -> exs1
 
-   2) Evaluate an 'inductive' arrow
+   1.2) Evaluate an 'inductive' arrow
 
         ctx |- exs0 ->: exs1
         -------------------
@@ -240,7 +240,7 @@ eval :: Context -> Expression -> EvalResult
         -----------------
             exs0.exs1
 
-  1) Selecting any collection of expressions from an atom produces bottom (nothing).
+  2.1) Selecting any collection of expressions from an atom produces bottom (nothing).
      ('e0' is an atom/token and () is bottom)
 
         'e0'.exs1
@@ -252,7 +252,7 @@ eval ctx@[] ex@(Eval (Witness (Conjunct exs1)) [(Symbol e0)])
   | True = Success []
 
 {-
-  2) Selecting a collection of expressions from another collection is equivalent to selecting the
+  2.2) Selecting a collection of expressions from another collection is equivalent to selecting the
      (right-hand side) collection from each element of the left-hand side collection.
      And vica versa...
 
@@ -270,7 +270,7 @@ eval ctx@[] ex@(Eval (Witness (Conjunct exs1)) (e0:es0))
             `collect` eval [] (Eval (Witness (Conjunct exs1)) es0)
 
 {-
-  3) Selecting top from a declaration returns the right-hand side of the arrow in the
+  2.3) Selecting top from a declaration returns the right-hand side of the arrow in the
      context of the left-hand side.
      (_ is top)
 
@@ -285,11 +285,10 @@ eval ctx@[] ex@(Eval (Witness (Conjunct [Top])) [(Eval (Declare ex0) rhs0)])
 
 
 {-
-  4) Selecting an expression from a declaration matches the right-hand side of the expression
+  2.4) Selecting an expression from a declaration matches the right-hand side of the expression
      against the expression)
      (rhs can can either an atomic token like 'e' or a declaration
      like ('a' -> ('b' -> ('c' 'd')) -> 'e'))
-     (notrhs is an atomic token or a declaration that doesn't match the lhs)
 
             (ex0 -> (a -> rhs0)).a
         -------------------------------
@@ -309,7 +308,7 @@ eval ctx@[] ex@(Eval (Witness (Conjunct [Top])) [(Eval (Declare ex0) rhs0)])
 
   Note) It is possible formulate an alternative semantics using anonymous "closures" as follows:
         (This is nice for studying the semantics from a different view point but unnecessary for
-        implementation) (TODO: but also see 3 to 5, should there be context?)
+        implementation) (TODO: but should there be context?)
 
         {exs0}._
         --------
@@ -363,14 +362,24 @@ eval ctx@[] ex@(Eval (Witness (Conjunct b)) exs0@[(Eval (Declare _) a)])
 {-
   Evaluate conjunct queries against a context
   -------------------------------------------
+-}
 
-  1) Query against a single scope
+{-
+  3.1) Query against a single scope
+       Note that {<c>}.exs1 will produce the original context c, but without .exs1 see rule 2.4.
+       However, also note that simple lambdas (as in anonymous sets) can't be looked up in scope and
+       thus this function (should) drop the first lambda from the resulting scope.
 
-           c |- .exs1
-        ----------------
-        c |- noScope({<c>}.exs1)
+        c |- .exs1
+        ----------
+        {<c>}.exs1
+-}
 
-  2) Query against two levels of scope
+eval ctx@[c] ex@(Eval (Witness (Conjunct exs1)) [])
+  | True = eval [] (Eval (Witness (Conjunct exs1)) $ scopeEnv c)
+
+{-
+  3.2) Query against two levels of scope
 
                c1 |- (c0 |- .exs1)
         -------------------------------
@@ -380,7 +389,7 @@ eval ctx@[] ex@(Eval (Witness (Conjunct b)) exs0@[(Eval (Declare _) a)])
         () |- ({<c1>}.^c0^.exs1  {<c0>}.exs1)
 
 
-  3) Query against a stack of scopes
+  3.3) Query against a stack of scopes
 
                 (cs |- (c1 |- (c0 |- .exs1))
         -------------------------------------------
@@ -392,8 +401,7 @@ eval ctx@[] ex@(Eval (Witness (Conjunct b)) exs0@[(Eval (Declare _) a)])
           c |- .exs
 -}
 
-eval ctx@[c] ex@(Eval (Witness (Conjunct exs1)) [])
-  | True = eval [] (Eval (Witness (Conjunct exs1)) $ scopeEnv c)
+
 
 eval ctx@(c:cs) ex@(Eval (Witness (Conjunct exs1)) [])
   | True = eval ctx (Eval (Witness (Conjunct exs1)) $ scopeEnv c)
