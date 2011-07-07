@@ -23,6 +23,7 @@ data ExpressionSegment = Declare [Expression]  -- (R->)
 
 data Expression = Symbol Token
                 | Top
+                | Bottom
                 | Eval ExpressionSegment [Expression]
                 deriving (Eq)
 
@@ -40,4 +41,3 @@ instance Show Expression where
       showExpr []     = "(ERROR: EMPTY EXPRESSION LIST)"
       showExpr (e:[]) = show e
       showExpr (e:es) = (foldl (++) ('(':(show e)) $ map show es) ++ ")"
-
