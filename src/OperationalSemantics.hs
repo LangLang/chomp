@@ -69,6 +69,23 @@ module OperationalSemantics where
         * conjunctContext
         * evalWithConjunct
         * uncheckedEval
+
+      + (2011-07-08)
+        At the moment "Top" is treated almost like a regular symbol, however there are certain rules
+        that should be implemented for performance reasons.
+        For example a.(b _ c d) should really just evaluate a._
+        On the other hand it might still be necessary to evaluate some sub-expressions for static
+        checks, e.g. a.(b -> c b:c _ d) should still evaluate b:c and report a compiler error if it
+        fails??? -- Actually, is this correct? After all "Top" matches all expressions.
+        Probably the check for b:c is NOT necessary.
+
+        However, what happens if we have the following:
+
+        (a.(b -> c b:c) a._)
+
+        This is not equivalent to either a.(b -> c b:c _) or (a.(b:c) a.(b -> c) a._) and might be
+        indicative of further bugs in the implementation (although assertions have not yet
+        been implemented, so technically this is not a problem yet)
 -}
 
 {-                                 MODULES                                  -}
@@ -334,11 +351,21 @@ eval ctx@[] ex@(
 --context ctx@[] ex@(Eval (Witness (Conjunct [Top])) exs0@[(Eval (Declare ex0) rhs0)])
 --  | True = [exs0]
 
+
+{-
+  2.????) Selecting from a chain does not heed bracketing
+
+            (ex0 -> (a -> (b -> rhs0))).(a -> b)
+        ---------------------------------------------
+        ex0 -> (a -> (b -> rhs0)) |- a -> (b -> rhs0)
+-}
+
+
 {-
   2.4) Selecting an expression from a declaration matches the right-hand side of the expression
-      against the expression)
-      (rhs can can either an atomic token like 'e' or a declaration
-      like ('a' -> ('b' -> ('c' 'd')) -> 'e'))
+      against the right-hand side of the declaration.
+      (rhs can can either an atomic token like 'e' or a declaration like
+      ('a' -> ('b' -> ('c' 'd')) -> 'e')).
 
         (ex0 -> a).a
         -------------
@@ -358,7 +385,7 @@ eval ctx@[] ex@(
 
   Note) It is possible formulate an alternative semantics using anonymous "closures" as follows:
         (This is nice for studying the semantics from a different view point but unnecessary for
-        implementation) (TODO: but should there be context?)
+        implementation) (TODO: but should there be context?).
 
         {exs0}._
         --------
@@ -389,7 +416,7 @@ eval ctx@[] ex@(
            {rhs}.exs1
 
 
-  Note Lemma) This works very simply for atomic tokens
+  Note Lemma) This works very simply for atomic tokens.
 
         {'e' -> rhs}.'e'
         ----------------
@@ -424,32 +451,20 @@ eval ctx@[] ex@(
   | otherwise = Success []
 
 {-
-  2.5) When the right-hand side is a context-query that would match the
+  2.5) When the right-hand side is a context-query it is equivalent to a query using the left-hand
+       side (which we call the "context-domain" for convenience).
 
-         (ex0 -> .a).a
-        -----------------
-        (ex0 -> ex0.a).a
+        (ex0 -> .a)._
+        -------------
+            ex0.a
+
+        (ex0 -> .a).a
+        -------------
+            ex0.a
 
         (ex0 -> .a).b
         -------------
              ()
-
-         (ex0 -> (.a -> rhs0)).a
-        --------------------------
-        (ex0 -> (ex0.a -> rhs0)).a
-
-        (ex0 -> (.a -> rhs0)).b
-        -----------------------
-                  ()
-
-
-          (ex0 -> (.(a -> rhs0))).a
-        ----------------------------
-        (ex0 -> (ex0.(a -> rhs0))).a
-
-        (ex0 -> (.(a -> rhs0))).b
-        -------------------------
-                   ()
 -}
 
 eval ctx@[] ex@(
@@ -461,8 +476,26 @@ eval ctx@[] ex@(
           (Witness (Conjunct a))
           []]]
   )
-  | a == b    = eval [] (Eval q'b [Eval d'ex0 [Eval q'b ex0]])
-  | otherwise = Success []
+  | b == [Top]  = eval [] (Eval q'b ex0)
+  | a == b      = eval [] (Eval q'b ex0)
+  | otherwise   = Success []
+
+{-
+  2.7) When the right-hand side is declaration from a context-query then it is equivalent to a
+       declaration where the left-hand side is queried from the context-domain.
+
+        (ex0 -> (.a -> rhs0))._
+        -----------------------
+             ex0.a -> rhs0
+
+        (ex0 -> (.a -> rhs0)).a
+        -----------------------
+             ex0.a -> rhs0
+
+        (ex0 -> (.a -> rhs0)).b
+        -----------------------
+                  ()
+-}
 
 eval ctx@[] ex@(
     Eval
@@ -476,22 +509,45 @@ eval ctx@[] ex@(
               []])
           rhs0]]
   )
-  | a == b    = Eval q'b
-                  [Eval
-                    (Declare ex0)
-                    [Eval
-                      (Declare
-                        [Eval
-                          (Witness (Conjunct a))
-                          []])
-                      rhs0]]
-  | otherwise = Success []
-
-
+  | b == [Top]  = Success [Eval (Declare $ resultToList $ eval [] (Eval q'b ex0)) rhs0]
+  | a == b      = Success [Eval (Declare $ resultToList $ eval [] (Eval q'b ex0)) rhs0]
+  | otherwise   = Success []
 
 {-
-  2.6) Selecting an expression from a declaration with multiple domains is equivalent to selecting
-       from multiple declarations with a single domain
+  2.8) When the context-query is a declaration only the first symbol in the chain needs to be
+       matched.
+       Note that selecting Top is handled by rule 2.5.
+
+          (ex0 -> (.(a -> rhs0))).a
+        ----------------------------
+        (ex0 -> (ex0.(a -> rhs0))).a
+
+        (ex0 -> (.(a -> rhs0))).b
+        -------------------------
+                   ()
+
+        TODO: match chains....
+-}
+
+eval ctx@[] ex@(
+    Eval
+      q'b@(Witness (Conjunct b))
+      [Eval
+        (Declare ex0)
+        [Eval
+          (Declare
+            [Eval
+              (Witness (Conjunct a))
+              []])
+          rhs0]]
+  )
+  | b == [Top]  = Success [Eval (Declare $ resultToList $ eval [] (Eval q'b ex0)) rhs0]
+  | a == b      = Success [Eval (Declare $ resultToList $ eval [] (Eval q'b ex0)) rhs0]
+  | otherwise   = Success []
+
+{-
+  2.9) Selecting an expression from a declaration with multiple domains is equivalent to selecting
+       from multiple declarations with a single domain.
 
               ((e0 es0) -> rhs0).exs1
         --------------------------------
