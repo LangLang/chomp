@@ -35,22 +35,18 @@ module OperationalSemantics where
       * conjunctContext
       * conjunctCollection
 
-
       In addition, the following conventions are typically used for variable names:
       * ex            A single expression
       * exs@(e:es)    A list of expressions
-      * ctx@(c:cs)    A context
+      * ctx@(c:cs)    A context (given by a list of scopes)
       * r             A result
-      * t             A token
-
+      * 'e'           A symbol (represented by the token "e")
       * <c>           The environment of a scope c
       * ^c^           The left-hand-side focus of a scope c (everything before the arrow)
-
-      * a,b           An expression that is matched in more than one place
-
-
-
-
+      * a,b           An expression that is matched in more than one place (used for simple pattern
+                      matching in the semantics)
+      * ()            Bottom or "nothing" (implemented as an empty list of expressions)
+      * _             Top or "anything" or "everything"
 
     BUGS:
       + (2011-06-28)
@@ -250,8 +246,8 @@ fullEval ctx ex =
   where
     evalResult = eval ctx ex
 
-{- Evaluating a definition has no effect
-   -------------------------------------
+{- Evaluating a declaration has no effect
+   --------------------------------------
    Only queries can be evaluated
 
    1.1) Evaluate a normal arrow
@@ -275,15 +271,32 @@ fullEval ctx ex =
   Evaluate conjunct queries outside of any context
   ------------------------------------------------
 
-  Note) When assuming nothing (no context/scope given), we can rewrite the rule without a turnstile.
-        (This is just convenient, it has no effect on the actual operational semantics)
+  Note) When assuming nothing / bottom (no context or scope given), we can rewrite the rule without
+        a turnstile. (This is just a convenience that lets us make empty scope implicit, it has no
+        effect on the actual operational semantics)
 
         (() |- exs0).exs1
         -----------------
             exs0.exs1
 
-  2.1) Selecting any collection of expressions from an atom produces bottom (nothing).
-       ('e0' is an atom/token and () is bottom)
+  2.1.1) Selecting any collection of expressions from Bottom produces Bottom, regardless of the
+         context.
+
+        ctx |- ().exs1
+        --------------
+             ()
+-}
+
+eval ctx@[] ex@(
+    Eval
+      (Witness (Conjunct exs1))
+      []
+  )
+  | True = Success []
+
+{-
+  2.1.2) Selecting any collection of expressions from an atom produces Bottom (nothing).
+         ('e0' is an atom/token and () is Bottom)
 
         'e0'.exs1
         ---------
@@ -297,6 +310,21 @@ eval ctx@[] ex@(
   )
   | True = Success []
 
+
+{-
+  2.1.3) Selecting any collection of expressions from Top simply returns the collection.
+
+        _.exs1
+        ------
+         exs1
+-}
+
+eval ctx@[] ex@(
+    Eval
+      (Witness (Conjunct exs1))
+      [Top]
+  )
+  | True = Success exs1
 
 
 --context ctx@[] ex@(Eval (Witness (Conjunct exs1)) [(Symbol e0)])
@@ -329,9 +357,8 @@ eval ctx@[] ex@(
 --            ++ context [] (Eval (Witness (Conjunct exs1)) es0)
 
 {-
-  2.3) Selecting top from a declaration returns the right-hand side of the arrow in the
+  2.3) Selecting Top from a declaration returns the right-hand side of the arrow in the
      context of the left-hand side.
-     (_ is top)
 
           (ex0 -> rhs0)._
         -------------------
@@ -353,19 +380,22 @@ eval ctx@[] ex@(
 
 
 {-
-  2.????) Selecting from a chain does not heed bracketing
+  2.4.1) Selecting from a chain does not heed bracketing
+         Note: This definition should be used with care in the future when side effects are
+               introduced.
 
-            (ex0 -> (a -> (b -> rhs0))).(a -> b)
-        ---------------------------------------------
-        ex0 -> (a -> (b -> rhs0)) |- a -> (b -> rhs0)
+        (ex0 -> (a -> rhs0)).(a -> rhs1)
+        ---------------------------------
+        (((ex0.a).rhs1) -> (a -> rhs1))._
 -}
 
 
+
 {-
-  2.4) Selecting an expression from a declaration matches the right-hand side of the expression
-      against the right-hand side of the declaration.
-      (rhs can can either an atomic token like 'e' or a declaration like
-      ('a' -> ('b' -> ('c' 'd')) -> 'e')).
+  2.4.2) Selecting an expression from a declaration matches the right-hand side of the expression
+         against the right-hand side of the declaration.
+         (rhs can can either an atomic token like 'e' or a declaration like
+         ('a' -> ('b' -> ('c' 'd')) -> 'e')).
 
         (ex0 -> a).a
         -------------
@@ -453,6 +483,8 @@ eval ctx@[] ex@(
 {-
   2.5) When the right-hand side is a context-query it is equivalent to a query using the left-hand
        side (which we call the "context-domain" for convenience).
+       Note that we don't write down a context at the bottom, because the query iteself (I.e. ex0.a
+       should produce a context)
 
         (ex0 -> .a)._
         -------------
