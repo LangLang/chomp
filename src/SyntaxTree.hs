@@ -14,7 +14,7 @@ import Data.ByteString.Char8 (pack)
 type Token      = B.ByteString
 
 data Query = Conjunct [Expression]             -- (.Q)
-           | Complement [Expression]           -- (/Q)
+           | Complement [Expression]           -- (~Q)
            deriving (Eq)
 
 data ExpressionSegment = Declare [Expression]  -- (R->)

@@ -43,7 +43,10 @@ module OperationalSemantics where
       * r             A result
       * t             A token
 
-      * a,b,c,d       An expression that is matched in more than one place
+      * <c>           The environment of a scope c
+      * ^c^           The left-hand-side focus of a scope c (everything before the arrow)
+
+      * a,b           An expression that is matched in more than one place
 
 
 
@@ -89,6 +92,12 @@ type Scope = (Int, [Expression])
 
 scopeFocus :: Scope -> Expression
 scopeFocus (i,exs) = exs !! i
+
+scopeFocusLHS :: Scope -> [Expression]
+scopeFocusLHS s = lhs $ scopeFocus s
+  where
+    lhs (Eval (Declare lhsExs) rhs) = lhsExs
+    lhs _ = error "IMPOSSIBLE ERROR: Only declarations can be the scope focus."
 
 scopeEnv :: Scope -> [Expression]
 scopeEnv (i,[])  = []
@@ -152,6 +161,8 @@ assert [] = Error
 assert l  = Success l
 
 
+{---------------------------- OLD
+
 -- Attempt match an expression to the another expression inside the current context
 -- Note that this is not just a simple equality test. There is a left-hand side expression and a
 -- right-hand side expression and both may be queries themselves. Therefore both need to be
@@ -176,6 +187,7 @@ conjunctCollection ctx (e:es) ex = (evalWithConjunct ctx e ex) ++ (conjunctColle
 --       be possible to match the expected result in this way, so might have to manually code
 --       contexts and expected results)
 -- TODO: NOT SURE IF THIS SHOULD RETURN A RESULT OR JUST A LIST OF EXPRESSIONS...
+
 evalWithConjunct :: Context -> Expression -> Expression -> [Expression]
 evalWithConjunct ctx _           (Eval (Assert _) [])     = error "IMPOSSIBLE ERROR: Not possible to have two selectors in succession."
 evalWithConjunct ctx _           (Eval (Witness _) [])    = error "IMPOSSIBLE ERROR: Not possible to have two selectors in succession."
@@ -186,6 +198,7 @@ evalWithConjunct ctx (Symbol t0) ex1@(Symbol t1)          = if t0 == t1 then [ex
 evalWithConjunct ctx (Symbol t0) ex1@(Eval (Declare _) _) = []
 evalWithConjunct ctx Top         ex1                      = [ex1]
 evalWithConjunct ctx Top         ex1                      = [ex1]
+
 
 ----------------- BUSY HERE: These are the more complicated cases...
 evalWithConjunct ctx ex0@(Eval (Declare ex00) ex01) ex1   = error "TODO: ..... NOT SURE YET WHAT TO DO HERE"
@@ -205,8 +218,20 @@ conjunctContext ctx@(c:cs) ex = if matches /= [] then matches else conjunctConte
                                                        --       POSSIBLY NEED TO LOOK AT THE CODE IN CONJUNCT
                                                        --       TO ENSURE CIRCULAR REFERENCES DO NOT TAKE PLACE
 
+---------------------------}
+
 -- Evaluates the expression inside the stack of contexts given
 eval :: Context -> Expression -> EvalResult
+context :: Context -> Expression -> [Context]
+context c e = []
+
+fullEval :: Context -> Expression -> ThunkResult
+fullEval ctx ex =
+  case evalResult of
+    Success exs -> Success $ zip (context ctx ex) exs
+    Error -> Error
+  where
+    evalResult = eval ctx ex
 
 {- Evaluating a definition has no effect
    -------------------------------------
@@ -214,15 +239,15 @@ eval :: Context -> Expression -> EvalResult
 
    1.1) Evaluate a normal arrow
 
-        ctx |- exs0 -> exs1
+        (ctx |- exs0) -> exs1
         -------------------
-        ctx |- exs0 -> exs1
+        (ctx |- exs0) -> exs1
 
    1.2) Evaluate an 'inductive' arrow
 
-        ctx |- exs0 ->: exs1
+        (ctx |- exs0) ->: exs1
         -------------------
-        ctx |- exs0 ->: exs1
+        (ctx |- exs0) ->: exs1
 -}
 
 --eval ctx ex@(Eval (Declare exs0) exs1)
@@ -241,20 +266,29 @@ eval :: Context -> Expression -> EvalResult
             exs0.exs1
 
   2.1) Selecting any collection of expressions from an atom produces bottom (nothing).
-     ('e0' is an atom/token and () is bottom)
+       ('e0' is an atom/token and () is bottom)
 
         'e0'.exs1
         ---------
            ()
 -}
 
-eval ctx@[] ex@(Eval (Witness (Conjunct exs1)) [(Symbol e0)])
+eval ctx@[] ex@(
+    Eval
+      (Witness (Conjunct exs1))
+      [Symbol e0]
+  )
   | True = Success []
+
+
+
+--context ctx@[] ex@(Eval (Witness (Conjunct exs1)) [(Symbol e0)])
+--  | True = [[]]
 
 {-
   2.2) Selecting a collection of expressions from another collection is equivalent to selecting the
-     (right-hand side) collection from each element of the left-hand side collection.
-     And vica versa...
+       (right-hand side) collection from each element of the left-hand side collection.
+       And vica versa...
 
            (e0 es0).exs1
         -------------------
@@ -265,38 +299,46 @@ eval ctx@[] ex@(Eval (Witness (Conjunct exs1)) [(Symbol e0)])
         (ex0.e1  ex0.es1)
 -}
 
-eval ctx@[] ex@(Eval (Witness (Conjunct exs1)) (e0:es0))
-  | True = eval [] (Eval (Witness (Conjunct exs1)) [e0])
-            `collect` eval [] (Eval (Witness (Conjunct exs1)) es0)
+eval ctx@[] ex@(
+    Eval
+      q'exs1@(Witness (Conjunct exs1))
+      (e0:es0)
+  )
+  | True = eval [] (Eval q'exs1 [e0])
+            `collect` eval [] (Eval q'exs1 es0)
+
+--context ctx@[] ex@(Eval (Witness (Conjunct exs1)) (e0:es0))
+--  | True = context [] (Eval (Witness (Conjunct exs1)) [e0])
+--            ++ context [] (Eval (Witness (Conjunct exs1)) es0)
 
 {-
   2.3) Selecting top from a declaration returns the right-hand side of the arrow in the
      context of the left-hand side.
      (_ is top)
 
-           (ex0 -> rhs0)._
-        ---------------------
-        (ex0 -> rhs0) |- rhs0
+          (ex0 -> rhs0)._
+        -------------------
+        ex0 -> rhs0 |- rhs0
 -}
 
 -- TODO: add context
-eval ctx@[] ex@(Eval (Witness (Conjunct [Top])) [(Eval (Declare ex0) rhs0)])
+eval ctx@[] ex@(
+    Eval
+      (Witness (Conjunct [Top]))
+      [Eval
+        (Declare ex0)
+        rhs0]
+  )
   | True = Success rhs0
 
+--context ctx@[] ex@(Eval (Witness (Conjunct [Top])) exs0@[(Eval (Declare ex0) rhs0)])
+--  | True = [exs0]
 
 {-
   2.4) Selecting an expression from a declaration matches the right-hand side of the expression
-     against the expression)
-     (rhs can can either an atomic token like 'e' or a declaration
-     like ('a' -> ('b' -> ('c' 'd')) -> 'e'))
-
-            (ex0 -> (a -> rhs0)).a
-        -------------------------------
-        ex0 -> (a -> rhs0) |- a -> rhs0
-
-        (ex0 -> (a -> rhs0)).b
-        ----------------------
-                  ()
+      against the expression)
+      (rhs can can either an atomic token like 'e' or a declaration
+      like ('a' -> ('b' -> ('c' 'd')) -> 'e'))
 
         (ex0 -> a).a
         -------------
@@ -305,6 +347,14 @@ eval ctx@[] ex@(Eval (Witness (Conjunct [Top])) [(Eval (Declare ex0) rhs0)])
         (ex0 -> a).b
         ------------
              ()
+
+            (ex0 -> (a -> rhs0)).a
+        -------------------------------
+        ex0 -> (a -> rhs0) |- a -> rhs0
+
+        (ex0 -> (a -> rhs0)).b
+        ----------------------
+                  ()
 
   Note) It is possible formulate an alternative semantics using anonymous "closures" as follows:
         (This is nice for studying the semantics from a different view point but unnecessary for
@@ -351,13 +401,118 @@ eval ctx@[] ex@(Eval (Witness (Conjunct [Top])) [(Eval (Declare ex0) rhs0)])
 -}
 
 -- TODO: add contexts
-eval ctx@[] ex@(Eval (Witness (Conjunct b)) [(Eval (Declare ex0) exs'a@[(Eval (Declare a) rhs0)])])
+eval ctx@[] ex@(
+    Eval
+      (Witness (Conjunct b))
+      exs0@[Eval
+        (Declare ex0)
+        a]
+  )
+  | a == b    = Success exs0
+  | otherwise = Success []
+
+eval ctx@[] ex@(
+    Eval
+      (Witness (Conjunct b))
+      [Eval
+        (Declare ex0)
+        exs'a@[Eval
+          (Declare a)
+          rhs0]]
+  )
   | a == b    = Success exs'a
   | otherwise = Success []
 
-eval ctx@[] ex@(Eval (Witness (Conjunct b)) exs0@[(Eval (Declare _) a)])
-  | a == b    = Success exs0
+{-
+  2.5) When the right-hand side is a context-query that would match the
+
+         (ex0 -> .a).a
+        -----------------
+        (ex0 -> ex0.a).a
+
+        (ex0 -> .a).b
+        -------------
+             ()
+
+         (ex0 -> (.a -> rhs0)).a
+        --------------------------
+        (ex0 -> (ex0.a -> rhs0)).a
+
+        (ex0 -> (.a -> rhs0)).b
+        -----------------------
+                  ()
+
+
+          (ex0 -> (.(a -> rhs0))).a
+        ----------------------------
+        (ex0 -> (ex0.(a -> rhs0))).a
+
+        (ex0 -> (.(a -> rhs0))).b
+        -------------------------
+                   ()
+-}
+
+eval ctx@[] ex@(
+    Eval
+      q'b@(Witness (Conjunct b))
+      [Eval
+        d'ex0@(Declare ex0)
+        [Eval
+          (Witness (Conjunct a))
+          []]]
+  )
+  | a == b    = eval [] (Eval q'b [Eval d'ex0 [Eval q'b ex0]])
   | otherwise = Success []
+
+eval ctx@[] ex@(
+    Eval
+      q'b@(Witness (Conjunct b))
+      [Eval
+        (Declare ex0)
+        [Eval
+          (Declare
+            [Eval
+              (Witness (Conjunct a))
+              []])
+          rhs0]]
+  )
+  | a == b    = Eval q'b
+                  [Eval
+                    (Declare ex0)
+                    [Eval
+                      (Declare
+                        [Eval
+                          (Witness (Conjunct a))
+                          []])
+                      rhs0]]
+  | otherwise = Success []
+
+
+
+{-
+  2.6) Selecting an expression from a declaration with multiple domains is equivalent to selecting
+       from multiple declarations with a single domain
+
+              ((e0 es0) -> rhs0).exs1
+        --------------------------------
+        ((e0 -> rhs0).exs1 (es0 -> rhs0).exs1)
+
+           (ex0 -> rhs0).(e1 es1)
+        --------------------------------
+        ((ex0 -> rhs0).e1 (ex0 -> rhs0).es1)
+-}
+
+eval ctx@[] ex@(
+    Eval
+      q'exs1@(Witness (Conjunct exs1))
+      [Eval
+        (Declare (e0:es0))
+        rhs0]
+  )
+  | True = eval [] (Eval q'exs1 [Eval (Declare [e0]) rhs0])
+            `collect` eval [] (Eval q'exs1 [Eval (Declare es0) rhs0])
+
+
 
 {-
   Evaluate conjunct queries against a context
@@ -375,20 +530,40 @@ eval ctx@[] ex@(Eval (Witness (Conjunct b)) exs0@[(Eval (Declare _) a)])
         {<c>}.exs1
 -}
 
-eval ctx@[c] ex@(Eval (Witness (Conjunct exs1)) [])
+eval ctx@[c] ex@(
+    Eval
+      (Witness (Conjunct exs1))
+      []
+  )
   | True = eval [] (Eval (Witness (Conjunct exs1)) $ scopeEnv c)
 
 {-
-  3.2) Query against two levels of scope
+  3.3) Query against an arrow in a scope
 
-               c1 |- (c0 |- .exs1)
+        (cs1 |- (c0 -> exs1)).c0
+        ------------------------
+          cs1 |- (c0 |- .exs1)
+
+-}
+
+{-
+  3.3) Query against two levels of scope
+
+               cs1 |- (c0 |- .exs1)
         -------------------------------
+        ({<c0>}.exs1 (cs1 |- ^c0^.exs1))
 
-        TODO.....
+-}
 
-        () |- ({<c1>}.^c0^.exs1  {<c0>}.exs1)
+eval ctx@(c:cs) ex@(
+    Eval
+      (Witness (Conjunct exs1))
+      []
+  )
+  | True = eval ctx (Eval (Witness (Conjunct exs1)) $ scopeEnv c)
+            `collect` eval cs (Eval (Witness (Conjunct exs1)) $ scopeFocusLHS c)
 
-
+{-
   3.3) Query against a stack of scopes
 
                 (cs |- (c1 |- (c0 |- .exs1))
@@ -403,9 +578,6 @@ eval ctx@[c] ex@(Eval (Witness (Conjunct exs1)) [])
 
 
 
-eval ctx@(c:cs) ex@(Eval (Witness (Conjunct exs1)) [])
-  | True = eval ctx (Eval (Witness (Conjunct exs1)) $ scopeEnv c)
-
 --        Success $
 --          concat $ map (conjunctCollection ctx $ scopeEnv c) exs1
 --            ++ uncheckedEval (cs
@@ -416,8 +588,8 @@ eval ctx@(c:cs) ex@(Eval (Witness (Conjunct exs1)) [])
     cs |- c:exs1
 -}
 
-eval ctx@(c:cs) ex@(Eval (Assert (Conjunct exs1)) [])
-  | True = assert $ uncheckedEval ctx ex
+--eval ctx@(c:cs) ex@(Eval (Assert (Conjunct exs1)) [])
+--  | True = assert $ uncheckedEval ctx ex
 
 {-
 ctx |- exs0.exs1
@@ -425,8 +597,8 @@ ctx |- exs0.exs1
 ?????ctx |- (exs0 |- .exs1)??
 -}
 
-eval ctx ex@(Eval (Witness (Conjunct exs1)) exs0)
-  | True = Success $ concat $ map (conjunctContext ctx) exs0
+--eval ctx ex@(Eval (Witness (Conjunct exs1)) exs0)
+--  | True = Success $ concat $ map (conjunctContext ctx) exs0
 
 {-
 ctx |- exs0 . exs1
