@@ -3,6 +3,13 @@ module Parser ( parseLangLang ) where
 {-                               DOCUMENTATION                              -}
 {-
     Parse LangLang source code and output a ParseTree
+
+    BUGS:
+      + (2011-07-08)
+        The string "->: a -> b" should be parsed in a way that bracketing looks like this
+        "->: (a -> b)" rather than like "->(: a) -> b"
+        Not sure yet whether "-> :a -> b" should be parsed differently from "->: a -> b", but it
+        might be convenient.
 -}
 
 {-                                 MODULES                                  -}
