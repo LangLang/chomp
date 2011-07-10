@@ -40,13 +40,16 @@ module OperationalSemantics where
       * exs@(e:es)    A list of expressions
       * ctx@(c:cs)    A context (given by a list of scopes)
       * r             A result
-      * 'e'           A symbol (represented by the token "e")
+      * 't'           A symbol (represented by the token "t")
       * <c>           The environment of a scope c
       * ^c^           The left-hand-side focus of a scope c (everything before the arrow)
       * a,b           An expression that is matched in more than one place (used for simple pattern
                       matching in the semantics)
+      * as,bs         A collection that is matched in more than one place
       * ()            Bottom or "nothing" (implemented as an empty list of expressions)
       * _             Top or "anything" or "everything"
+      * rhs           A collection of expressions on the right-hand side of a declaration
+
 
     BUGS:
       + (2011-06-28)
@@ -251,6 +254,7 @@ fullEval ctx ex =
    Only queries can be evaluated
 
    1.1) Evaluate a normal arrow
+        (TODO: Not sure if writing the context like this for arrows is correct)
 
         (ctx |- exs0) -> exs1
         -------------------
@@ -275,9 +279,9 @@ fullEval ctx ex =
         a turnstile. (This is just a convenience that lets us make empty scope implicit, it has no
         effect on the actual operational semantics)
 
-        (() |- exs0).exs1
-        -----------------
-            exs0.exs1
+        () |- exs0.exs1
+        ---------------
+           exs0.exs1
 
   2.1.1) Selecting any collection of expressions from Bottom produces Bottom, regardless of the
          context.
@@ -287,7 +291,7 @@ fullEval ctx ex =
              ()
 -}
 
-eval ctx@[] ex@(
+eval ctx ex@(
     Eval
       (Witness (Conjunct exs1))
       []
@@ -296,9 +300,8 @@ eval ctx@[] ex@(
 
 {-
   2.1.2) Selecting any collection of expressions from an atom produces Bottom (nothing).
-         ('e0' is an atom/token and () is Bottom)
 
-        'e0'.exs1
+        't0'.exs1
         ---------
            ()
 -}
@@ -306,20 +309,27 @@ eval ctx@[] ex@(
 eval ctx@[] ex@(
     Eval
       (Witness (Conjunct exs1))
-      [Symbol e0]
+      [Symbol t0]
   )
   | True = Success []
 
-
 {-
-  2.1.3) Selecting any collection of expressions from Top simply returns the collection.
-
-        _.exs1
-        ------
-         exs1
+  TODO:
+        ctx |- 'e0'.exs1
+        ----------------
+               ??
 -}
 
-eval ctx@[] ex@(
+{-
+  2.1.3) Selecting any collection of expressions from Top simply returns the collection along with
+         the context
+
+        ctx |- _.exs1
+        -------------
+         ctx |- exs1
+-}
+
+eval ctx ex@(
     Eval
       (Witness (Conjunct exs1))
       [Top]
@@ -330,27 +340,56 @@ eval ctx@[] ex@(
 --context ctx@[] ex@(Eval (Witness (Conjunct exs1)) [(Symbol e0)])
 --  | True = [[]]
 
+
+{-
+  2.1.4) First evaluate subqueries before evaluating the full query.
+
+         (exs0.q0).exs1
+        ----------------
+        exs0.q0 |- .exs1  ??? TODO: Is this right???
+
+         exs0.(exs1.q1)
+        ----------------
+          ?????? first evaluate exs1.q1 ???
+-
+
+
+TODO: BUSY HERE.........
+
+
+eval ctx ex@(
+    Eval
+      q'exs1@(Witness (Conjunct exs1))
+      exs'q0@[Eval (Witness exs0) q0]
+  )
+  | True = eval [eval [] (exs0 q0)] q'exs1
+
+
+
+--}
+
 {-
   2.2) Selecting a collection of expressions from another collection is equivalent to selecting the
-       (right-hand side) collection from each element of the left-hand side collection.
-       And vica versa...
+       (right-hand side) collection from each element of the left-hand side collection and vice
+       versa...
+       This holds regardless of the context given.
 
-           (e0 es0).exs1
-        -------------------
-        (e0.exs1  es0.exs1)
+                ctx |- (e0 es0).exs1
+        -------------------------------------
+        ((ctx |- e0.exs1)  (ctx |- es0.exs1))
 
-          ex0.(e1 es1)
-        -----------------
-        (ex0.e1  ex0.es1)
+                ctx |- ex0.(e1 es1)
+        -----------------------------------
+        ((ctx |- ex0.e1)  (ctx |- ex0.es1))
 -}
 
-eval ctx@[] ex@(
+eval ctx ex@(
     Eval
       q'exs1@(Witness (Conjunct exs1))
       (e0:es0)
   )
-  | True = eval [] (Eval q'exs1 [e0])
-            `collect` eval [] (Eval q'exs1 es0)
+  | True = eval ctx (Eval q'exs1 [e0])
+            `collect` eval ctx (Eval q'exs1 es0)
 
 --context ctx@[] ex@(Eval (Witness (Conjunct exs1)) (e0:es0))
 --  | True = context [] (Eval (Witness (Conjunct exs1)) [e0])
@@ -358,15 +397,16 @@ eval ctx@[] ex@(
 
 {-
   2.3) Selecting Top from a declaration returns the right-hand side of the arrow in the
-     context of the left-hand side.
+       context of the left-hand side.
+       This holds regardless of the context.
 
-          (ex0 -> rhs0)._
-        -------------------
-        ex0 -> rhs0 |- rhs0
+          ctx |- (ex0 -> rhs0)._
+        --------------------------
+        ctx |- ex0 -> rhs0 |- rhs0
 -}
 
 -- TODO: add context
-eval ctx@[] ex@(
+eval ctx ex@(
     Eval
       (Witness (Conjunct [Top]))
       [Eval
@@ -380,30 +420,62 @@ eval ctx@[] ex@(
 
 
 {-
-  2.4.1) Selecting from a chain does not heed bracketing
-         Note: This definition should be used with care in the future when side effects are
-               introduced.
+  2.?) Selecting an expression from a declaration with multiple domains is equivalent to selecting
+       from multiple declarations with a single domain.
 
-        (ex0 -> (a -> rhs0)).(a -> rhs1)
-        ---------------------------------
-        (((ex0.a).rhs1) -> (a -> rhs1))._
+               ((e0 es0) -> rhs0).exs1
+        --------------------------------------
+        ((e0 -> rhs0).exs1 (es0 -> rhs0).exs1)
+
+               (ex0 -> rhs0).(e1 es1)
+        ------------------------------------
+        ((ex0 -> rhs0).e1 (ex0 -> rhs0).es1)
+
+                    (ex0 -> rhs0).((e1 es1) -> rhs1)
+        --------------------------------------------------------
+        ((ex0 -> rhs0).(e1 -> rhs1) (ex0 -> rhs0).(es1 -> rhs1))
 -}
 
+eval ctx@[] ex@(
+    Eval
+      q'exs1@(Witness (Conjunct exs1))
+      [Eval
+        (Declare (e0:es0))
+        rhs0]
+  )
+  | True = eval [] (Eval q'exs1 [Eval (Declare [e0]) rhs0])
+            `collect` eval [] (Eval q'exs1 [Eval (Declare es0) rhs0])
 
+-- TODO ...
 
 {-
-  2.4.2) Selecting an expression from a declaration matches the right-hand side of the expression
+  2.4.1) Selecting an expression from a declaration matches the right-hand side of the expression
          against the right-hand side of the declaration.
-         (rhs can can either an atomic token like 'e' or a declaration like
-         ('a' -> ('b' -> ('c' 'd')) -> 'e')).
+         Note that ex0 can be complex expression like (d -> c -> f), so selecting
+         ((d -> c -> f) -> a).a will still return a regardless of the structure of ex0
 
         (ex0 -> a).a
         -------------
         ex0 -> a |- a
 
         (ex0 -> a).b
-        ------------
-             ()
+        --------------
+              ()
+-}
+
+eval ctx@[] ex@(
+    Eval
+      (Witness (Conjunct [b]))
+      exs0@[Eval
+        (Declare ex0)
+        [a]]
+  )
+  | a == b    = Success exs0
+  -- | otherwise = Success []  (Handled in 2.10)
+
+{-
+  2.4.2) Selecting from a chained expression matches against the first link in the chain (if the
+         entire chain could not be matched)
 
             (ex0 -> (a -> rhs0)).a
         -------------------------------
@@ -411,8 +483,57 @@ eval ctx@[] ex@(
 
         (ex0 -> (a -> rhs0)).b
         ----------------------
-                  ()
+                   ()
+-}
 
+eval ctx@[] ex@(
+    Eval
+      (Witness (Conjunct [b]))
+      [Eval
+        (Declare ex0)
+        exs'a@[Eval
+          (Declare [a])
+          rhs0]]
+  )
+  | a == b    = Success exs'a
+  -- | otherwise = Success []  (Handled in 2.10)
+
+{-
+  2.4.3) Selecting from a chain does not heed bracketing
+         Note: This definition should be used with care in the future when side effects are
+               introduced.
+
+            (ex0 -> (a -> rhs0)).(b -> rhs1)
+        -----------------------------------------
+        (ex0 -> a).b -> (ex0 -> (a -> rhs0)).b.rhs1
+
+        (ex0 -> (a -> rhs0)).(b -> rhs1)
+        --------------------------------
+                       ()
+-}
+
+eval ctx@[] ex@(
+    Eval
+      (Witness (Conjunct [Eval (Declare [b]) rhs1]))
+      exs'a@[Eval
+        (Declare ex0)
+        [Eval
+          (Declare [a])
+          rhs0]]
+  )
+  | a == b    = eval [] (Eval
+                          (Declare
+                            [Eval
+                              (Witness (Conjunct [b]))
+                              [Eval (Declare ex0) [a]]])
+                          [Eval
+                            (Witness (Conjunct rhs1))
+                            [Eval
+                              (Witness (Conjunct [b]))
+                              exs'a]])
+  -- | otherwise = Success []  (Handled in 2.10)
+
+{-
   Note) It is possible formulate an alternative semantics using anonymous "closures" as follows:
         (This is nice for studying the semantics from a different view point but unnecessary for
         implementation) (TODO: but should there be context?).
@@ -457,29 +578,6 @@ eval ctx@[] ex@(
            'e'
 -}
 
--- TODO: add contexts
-eval ctx@[] ex@(
-    Eval
-      (Witness (Conjunct b))
-      exs0@[Eval
-        (Declare ex0)
-        a]
-  )
-  | a == b    = Success exs0
-  | otherwise = Success []
-
-eval ctx@[] ex@(
-    Eval
-      (Witness (Conjunct b))
-      [Eval
-        (Declare ex0)
-        exs'a@[Eval
-          (Declare a)
-          rhs0]]
-  )
-  | a == b    = Success exs'a
-  | otherwise = Success []
-
 {-
   2.5) When the right-hand side is a context-query it is equivalent to a query using the left-hand
        side (which we call the "context-domain" for convenience).
@@ -510,7 +608,7 @@ eval ctx@[] ex@(
   )
   | b == [Top]  = eval [] (Eval q'b ex0)
   | a == b      = eval [] (Eval q'b ex0)
-  | otherwise   = Success []
+  -- | otherwise   = Success []
 
 {-
   2.7) When the right-hand side is declaration from a context-query then it is equivalent to a
@@ -543,7 +641,7 @@ eval ctx@[] ex@(
   )
   | b == [Top]  = Success [Eval (Declare $ resultToList $ eval [] (Eval q'b ex0)) rhs0]
   | a == b      = Success [Eval (Declare $ resultToList $ eval [] (Eval q'b ex0)) rhs0]
-  | otherwise   = Success []
+  -- | otherwise   = Success []
 
 {-
   2.8) When the context-query is a declaration only the first symbol in the chain needs to be
@@ -575,31 +673,44 @@ eval ctx@[] ex@(
   )
   | b == [Top]  = Success [Eval (Declare $ resultToList $ eval [] (Eval q'b ex0)) rhs0]
   | a == b      = Success [Eval (Declare $ resultToList $ eval [] (Eval q'b ex0)) rhs0]
-  | otherwise   = Success []
+  -- | otherwise   = Success []
 
 {-
-  2.9) Selecting an expression from a declaration with multiple domains is equivalent to selecting
-       from multiple declarations with a single domain.
+  2.10) Evaluate all queries with no context that has an empty result
 
-              ((e0 es0) -> rhs0).exs1
-        --------------------------------
-        ((e0 -> rhs0).exs1 (es0 -> rhs0).exs1)
+  (2.4.1)
+        (ex0 -> a).b
+        ------------
+             ()
 
-           (ex0 -> rhs0).(e1 es1)
+  (2.4.2)
+        (ex0 -> (a -> rhs0)).(b -> rhs1)
         --------------------------------
-        ((ex0 -> rhs0).e1 (ex0 -> rhs0).es1)
+                       ()
+
+  (2.4.3)
+        (ex0 -> (a -> rhs0)).b
+        ----------------------
+                   ()
+
+  (2.5)
+        (ex0 -> .a).b
+        -------------
+             ()
+
+  (2.7)
+        (ex0 -> (.a -> rhs0)).b
+        -----------------------
+                  ()
+
+  (2.8)
+        (ex0 -> (.(a -> rhs0))).b
+        -------------------------
+                   ()
+
 -}
 
-eval ctx@[] ex@(
-    Eval
-      q'exs1@(Witness (Conjunct exs1))
-      [Eval
-        (Declare (e0:es0))
-        rhs0]
-  )
-  | True = eval [] (Eval q'exs1 [Eval (Declare [e0]) rhs0])
-            `collect` eval [] (Eval q'exs1 [Eval (Declare es0) rhs0])
-
+eval ctx@[] ex = Success []
 
 
 {-
