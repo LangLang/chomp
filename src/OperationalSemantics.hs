@@ -314,13 +314,6 @@ eval ctx@[] ex@(
   | True = Success []
 
 {-
-  TODO:
-        ctx |- 'e0'.exs1
-        ----------------
-               ??
--}
-
-{-
   2.1.3) Selecting any collection of expressions from Top simply returns the collection along with
          the context
 
@@ -394,6 +387,20 @@ eval ctx ex@(
 --context ctx@[] ex@(Eval (Witness (Conjunct exs1)) (e0:es0))
 --  | True = context [] (Eval (Witness (Conjunct exs1)) [e0])
 --            ++ context [] (Eval (Witness (Conjunct exs1)) es0)
+
+
+{-
+  TODO:
+
+            ctx |- 't0'.ex1
+        -----------------------
+        ctx |- ({ctx}.'t0').ex1
+
+                 ctx |- (ex0 -> rhs0).ex1
+        ------------------------------------------
+        ctx |- ({ctx}.(ex0 -> rhs0) {ctx}.ex0).ex1
+-}
+
 
 {-
   2.3) Selecting Top from a declaration returns the right-hand side of the arrow in the
