@@ -237,10 +237,7 @@ conjunctContext ctx@(c:cs) ex = if matches /= [] then matches else conjunctConte
 ---------------------------}
 
 -- Evaluates the expression inside the stack of contexts given
--- Note: The function is uncurried in order to pattern match the Context and Expression
---       simultaneously
-
-eval :: (Context, Expression) -> ([Context], EvalResult)
+eval :: Context -> Expression -> ([Context], EvalResult)
 
 {-
 fullEval :: Context -> Expression -> ThunkResult
@@ -293,11 +290,11 @@ fullEval ctx ex =
              ()
 -}
 
-eval (ctx, ex@(
+eval ctx ex@(
     Eval
       (Witness (Conjunct exs1))
       []
-  ))
+  )
   | True = ([], Success [])
 
 
@@ -309,11 +306,11 @@ eval (ctx, ex@(
            ()
 -}
 
-eval (ctx@[], ex@(
+eval ctx@[] ex@(
     Eval
       (Witness (Conjunct exs1))
       [Symbol t0]
-  ))
+  )
   | True = ([], Success [])
 
 {-
@@ -329,11 +326,11 @@ eval (ctx@[], ex@(
          ctx |- exs1
 -}
 
-eval (ctx, ex@(
+eval ctx ex@(
     Eval
       (Witness (Conjunct exs1))
       [Top]
-  ))
+  )
   | True = ([ctx], Success exs1)
 
 {-
@@ -877,4 +874,4 @@ ctx |- ????????
 --      when it has an error... for now we're just assuming this is the correct implementation for
 --      simplicity. Will come back to it later.
 uncheckedEval :: Context -> Expression -> [Expression]
-uncheckedEval ctx ex = resultToList $ snd $ eval (ctx, ex)
+uncheckedEval ctx ex = resultToList $ snd $ eval ctx ex
