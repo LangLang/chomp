@@ -237,18 +237,20 @@ conjunctContext ctx@(c:cs) ex = if matches /= [] then matches else conjunctConte
 ---------------------------}
 
 -- Evaluates the expression inside the stack of contexts given
-eval :: Context -> Expression -> EvalResult
-context :: Context -> Expression -> [Context]
-context c e = []
+-- Note: The function is uncurried in order to pattern match the Context and Expression
+--       simultaneously
 
+eval :: (Context, Expression) -> ([Context], EvalResult)
+
+{-
 fullEval :: Context -> Expression -> ThunkResult
 fullEval ctx ex =
   case evalResult of
-    Success exs -> Success $ zip (context ctx ex) exs
+    Success exs -> Success $ zip (context $ E ctx ex) exs
     Error -> Error
   where
-    evalResult = eval ctx ex
-
+    evalResult = eval $ E ctx ex
+-}
 {- Evaluating a declaration has no effect
    --------------------------------------
    Only queries can be evaluated
@@ -291,12 +293,13 @@ fullEval ctx ex =
              ()
 -}
 
-eval ctx ex@(
+eval (ctx, ex@(
     Eval
       (Witness (Conjunct exs1))
       []
-  )
-  | True = Success []
+  ))
+  | True = ([], Success [])
+
 
 {-
   2.1.2) Selecting any collection of expressions from an atom produces Bottom (nothing).
@@ -306,57 +309,84 @@ eval ctx ex@(
            ()
 -}
 
-eval ctx@[] ex@(
+eval (ctx@[], ex@(
     Eval
       (Witness (Conjunct exs1))
       [Symbol t0]
-  )
-  | True = Success []
+  ))
+  | True = ([], Success [])
 
 {-
   2.1.3) Selecting any collection of expressions from Top simply returns the collection along with
-         the context
+         the context. Top does not influence the context (it behaves a little different from other
+         collections - almost like a sum type where other collections are a little like products...
+         on the other hand note that selecting directly from Top does not make much sense, and
+         perhaps the semantics should technically be to return a context of Top. It is possible
+         that this would simply return an error or a warning in the future)
 
         ctx |- _.exs1
         -------------
          ctx |- exs1
 -}
 
-eval ctx ex@(
+eval (ctx, ex@(
     Eval
       (Witness (Conjunct exs1))
       [Top]
-  )
-  | True = Success exs1
-
-
---context ctx@[] ex@(Eval (Witness (Conjunct exs1)) [(Symbol e0)])
---  | True = [[]]
-
+  ))
+  | True = ([ctx], Success exs1)
 
 {-
   2.1.4) First evaluate subqueries before evaluating the full query.
 
-         (exs0.q0).exs1
-        ----------------
-        exs0.q0 |- .exs1  ??? TODO: Is this right???
+        In the first case the context returned from the left-hand subquery is carried over to the
+        main query.
 
-         exs0.(exs1.q1)
-        ----------------
-          ?????? first evaluate exs1.q1 ???
--
+        (exs0.qs0).exs1
+        ---------------
+             ????          (First evaluate (exs0.qs0))
 
+        In the second case the context returned from the right-hand subquery is dropped when
+        evaluating the main query. Also the left-hand side collection does not affect the right-hand
+        side subquery in any way (I.e. no context is passed to the subquery either)
 
-TODO: BUSY HERE.........
-
-
+        exs0.(exs1.qs1)
+        ---------------
+             ????          (First evaluate (exs1.q1))
+-}
+{-
 eval ctx ex@(
     Eval
       q'exs1@(Witness (Conjunct exs1))
-      exs'q0@[Eval (Witness exs0) q0]
+      exs'qs0@[Eval
+        (Witness (Conjunct qs0))
+        exs0]
   )
-  | True = eval [eval [] (exs0 q0)] q'exs1
+  | True = eval (context [] exs'qs0) (Eval q'exs1 (eval [] exs'qs0))
 
+{-
+context ctx ex@(
+    Eval
+      q'exs1@(Witness (Conjunct exs1))
+      exs'qs0@[Eval
+        (Witness (Conjunct qs0))
+        exs0]
+  )
+  -- TODO: Is this 100% correct?
+  | True = context (context [] exs'qs0) (Eval q'exs1 (eval [] exs'qs0))
+
+-}
+{-
+eval ctx ex@(
+    Eval
+      (Witness (Conjunct
+        exs'qs1@[Eval
+          (Witness (Conjunct qs1))
+          exs1]))
+      exs0
+  )
+  | True = eval [] (Eval (Witness (Conjunct (eval [] exs'qs1))) exs0)
+-}
 
 
 --}
@@ -375,7 +405,7 @@ eval ctx ex@(
         -----------------------------------
         ((ctx |- ex0.e1)  (ctx |- ex0.es1))
 -}
-
+{-
 eval ctx ex@(
     Eval
       q'exs1@(Witness (Conjunct exs1))
@@ -383,7 +413,7 @@ eval ctx ex@(
   )
   | True = eval ctx (Eval q'exs1 [e0])
             `collect` eval ctx (Eval q'exs1 es0)
-
+-}
 --context ctx@[] ex@(Eval (Witness (Conjunct exs1)) (e0:es0))
 --  | True = context [] (Eval (Witness (Conjunct exs1)) [e0])
 --            ++ context [] (Eval (Witness (Conjunct exs1)) es0)
@@ -392,9 +422,9 @@ eval ctx ex@(
 {-
   TODO:
 
-            ctx |- 't0'.ex1
-        -----------------------
-        ctx |- ({ctx}.'t0').ex1
+                   't0'.ex1
+        ctx |- ----------------
+               ({ctx}.'t0').ex1
 
                  ctx |- (ex0 -> rhs0).ex1
         ------------------------------------------
@@ -412,7 +442,7 @@ eval ctx ex@(
         ctx |- ex0 -> rhs0 |- rhs0
 -}
 
--- TODO: add context
+{-
 eval ctx ex@(
     Eval
       (Witness (Conjunct [Top]))
@@ -421,6 +451,7 @@ eval ctx ex@(
         rhs0]
   )
   | True = Success rhs0
+-}
 
 --context ctx@[] ex@(Eval (Witness (Conjunct [Top])) exs0@[(Eval (Declare ex0) rhs0)])
 --  | True = [exs0]
@@ -434,6 +465,10 @@ eval ctx ex@(
         --------------------------------------
         ((e0 -> rhs0).exs1 (es0 -> rhs0).exs1)
 
+        --- But does the value BEFORE the arrow matter at all? Why split it up?
+        --- Note that we should indeed think about context however.... TODO
+
+
                (ex0 -> rhs0).(e1 es1)
         ------------------------------------
         ((ex0 -> rhs0).e1 (ex0 -> rhs0).es1)
@@ -443,6 +478,7 @@ eval ctx ex@(
         ((ex0 -> rhs0).(e1 -> rhs1) (ex0 -> rhs0).(es1 -> rhs1))
 -}
 
+{-
 eval ctx@[] ex@(
     Eval
       q'exs1@(Witness (Conjunct exs1))
@@ -452,7 +488,7 @@ eval ctx@[] ex@(
   )
   | True = eval [] (Eval q'exs1 [Eval (Declare [e0]) rhs0])
             `collect` eval [] (Eval q'exs1 [Eval (Declare es0) rhs0])
-
+-}
 -- TODO ...
 
 {-
@@ -470,6 +506,7 @@ eval ctx@[] ex@(
               ()
 -}
 
+{-
 eval ctx@[] ex@(
     Eval
       (Witness (Conjunct [b]))
@@ -479,7 +516,7 @@ eval ctx@[] ex@(
   )
   | a == b    = Success exs0
   -- | otherwise = Success []  (Handled in 2.10)
-
+-}
 {-
   2.4.2) Selecting from a chained expression matches against the first link in the chain (if the
          entire chain could not be matched)
@@ -492,7 +529,7 @@ eval ctx@[] ex@(
         ----------------------
                    ()
 -}
-
+{-
 eval ctx@[] ex@(
     Eval
       (Witness (Conjunct [b]))
@@ -504,7 +541,7 @@ eval ctx@[] ex@(
   )
   | a == b    = Success exs'a
   -- | otherwise = Success []  (Handled in 2.10)
-
+-}
 {-
   2.4.3) Selecting from a chain does not heed bracketing
          Note: This definition should be used with care in the future when side effects are
@@ -518,7 +555,7 @@ eval ctx@[] ex@(
         --------------------------------
                        ()
 -}
-
+{-
 eval ctx@[] ex@(
     Eval
       (Witness (Conjunct [Eval (Declare [b]) rhs1]))
@@ -539,7 +576,7 @@ eval ctx@[] ex@(
                               (Witness (Conjunct [b]))
                               exs'a]])
   -- | otherwise = Success []  (Handled in 2.10)
-
+-}
 {-
   Note) It is possible formulate an alternative semantics using anonymous "closures" as follows:
         (This is nice for studying the semantics from a different view point but unnecessary for
@@ -603,7 +640,7 @@ eval ctx@[] ex@(
         -------------
              ()
 -}
-
+{-
 eval ctx@[] ex@(
     Eval
       q'b@(Witness (Conjunct b))
@@ -616,7 +653,7 @@ eval ctx@[] ex@(
   | b == [Top]  = eval [] (Eval q'b ex0)
   | a == b      = eval [] (Eval q'b ex0)
   -- | otherwise   = Success []
-
+-}
 {-
   2.7) When the right-hand side is declaration from a context-query then it is equivalent to a
        declaration where the left-hand side is queried from the context-domain.
@@ -633,7 +670,7 @@ eval ctx@[] ex@(
         -----------------------
                   ()
 -}
-
+{-
 eval ctx@[] ex@(
     Eval
       q'b@(Witness (Conjunct b))
@@ -649,7 +686,7 @@ eval ctx@[] ex@(
   | b == [Top]  = Success [Eval (Declare $ resultToList $ eval [] (Eval q'b ex0)) rhs0]
   | a == b      = Success [Eval (Declare $ resultToList $ eval [] (Eval q'b ex0)) rhs0]
   -- | otherwise   = Success []
-
+-}
 {-
   2.8) When the context-query is a declaration only the first symbol in the chain needs to be
        matched.
@@ -665,7 +702,7 @@ eval ctx@[] ex@(
 
         TODO: match chains....
 -}
-
+{-
 eval ctx@[] ex@(
     Eval
       q'b@(Witness (Conjunct b))
@@ -681,7 +718,7 @@ eval ctx@[] ex@(
   | b == [Top]  = Success [Eval (Declare $ resultToList $ eval [] (Eval q'b ex0)) rhs0]
   | a == b      = Success [Eval (Declare $ resultToList $ eval [] (Eval q'b ex0)) rhs0]
   -- | otherwise   = Success []
-
+-}
 {-
   2.10) Evaluate all queries with no context that has an empty result
 
@@ -716,9 +753,9 @@ eval ctx@[] ex@(
                    ()
 
 -}
-
+{-
 eval ctx@[] ex = Success []
-
+-}
 
 {-
   Evaluate conjunct queries against a context
@@ -735,14 +772,14 @@ eval ctx@[] ex = Success []
         ----------
         {<c>}.exs1
 -}
-
+{-
 eval ctx@[c] ex@(
     Eval
       (Witness (Conjunct exs1))
       []
   )
   | True = eval [] (Eval (Witness (Conjunct exs1)) $ scopeEnv c)
-
+-}
 {-
   3.3) Query against an arrow in a scope
 
@@ -759,7 +796,12 @@ eval ctx@[c] ex@(
         -------------------------------
         ({<c0>}.exs1 (cs1 |- ^c0^.exs1))
 
--}
+
+        TODO: This isn't currently possible because the representation of cs1 |- (c0 |- ().exs1)
+              is exactly the same.
+              We'll probably need to match something like (a ->. b).c instead for this to work.
+
+-
 
 eval ctx@(c:cs) ex@(
     Eval
@@ -768,6 +810,7 @@ eval ctx@(c:cs) ex@(
   )
   | True = eval ctx (Eval (Witness (Conjunct exs1)) $ scopeEnv c)
             `collect` eval cs (Eval (Witness (Conjunct exs1)) $ scopeFocusLHS c)
+--}
 
 {-
   3.3) Query against a stack of scopes
@@ -834,4 +877,4 @@ ctx |- ????????
 --      when it has an error... for now we're just assuming this is the correct implementation for
 --      simplicity. Will come back to it later.
 uncheckedEval :: Context -> Expression -> [Expression]
-uncheckedEval ctx ex = resultToList $ eval ctx ex
+uncheckedEval ctx ex = resultToList $ snd $ eval (ctx, ex)
