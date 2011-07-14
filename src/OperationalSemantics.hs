@@ -128,6 +128,9 @@ scopeEmpty = (0,[])
 -- A context is the path (stack of arrow declarations) leading to the current computation
 -- The path consists of a list of scopes, each of which is a collection of expression plus a focus
 -- Note that the top of the stack is the head of the list
+-- Note: It may be more efficient to use a finger tree to store the various paths of a context,
+--       however, we are more concerned with correctness and simplicity than efficiency at this
+--       stage.
 type Context = [Scope]
 
 contextEmpty :: Context
@@ -236,8 +239,28 @@ conjunctContext ctx@(c:cs) ex = if matches /= [] then matches else conjunctConte
 
 ---------------------------}
 
+
+
+mapSnd :: (a -> b) -> (c,a) -> (c,b)
+mapSnd f (a,b) = (a, f b)
+
+mapEval :: (Expression -> Expression) -> ThunkResult -> ThunkResult
+mapEval f results =
+  case results of
+    Success r -> mapResult eval (map (mapSnd f) r)
+    Error     -> Error
+  where
+    mapResult f [r]    = f r
+    mapResult f (r:rs) =
+      case f r of
+        Success r' -> case mapResult f rs of
+          Success rs' -> Success $ r' ++ rs'
+          Error -> Error
+        Error -> Error
+
+
 -- Evaluates the expression inside the stack of contexts given
-eval :: Context -> Expression -> ([Context], EvalResult)
+eval :: Thunk -> ThunkResult
 
 {-
 fullEval :: Context -> Expression -> ThunkResult
@@ -290,12 +313,12 @@ fullEval ctx ex =
              ()
 -}
 
-eval ctx ex@(
+eval (ctx, ex@(
     Eval
       (Witness (Conjunct exs1))
       []
-  )
-  | True = ([], Success [])
+  ))
+  | True = Success []
 
 
 {-
@@ -306,12 +329,12 @@ eval ctx ex@(
            ()
 -}
 
-eval ctx@[] ex@(
+eval (ctx@[], ex@(
     Eval
       (Witness (Conjunct exs1))
       [Symbol t0]
-  )
-  | True = ([], Success [])
+  ))
+  | True = Success []
 
 {-
   2.1.3) Selecting any collection of expressions from Top simply returns the collection along with
@@ -325,13 +348,13 @@ eval ctx@[] ex@(
         -------------
          ctx |- exs1
 -}
-
-eval ctx ex@(
+{-
+eval (ctx, ex@(
     Eval
       (Witness (Conjunct exs1))
       [Top]
-  )
-  | True = ([ctx], Success exs1)
+  ))
+  | True = Success [(ctx, exs1)
 
 {-
   2.1.4) First evaluate subqueries before evaluating the full query.
@@ -350,16 +373,22 @@ eval ctx ex@(
         exs0.(exs1.qs1)
         ---------------
              ????          (First evaluate (exs1.q1))
+
+       TODO: This rule could possibly be extended to all types of queries...
 -}
-{-
-eval ctx ex@(
+
+eval (ctx, ex@(
     Eval
       q'exs1@(Witness (Conjunct exs1))
-      exs'qs0@[Eval
+      [ex'qs0@(Eval
         (Witness (Conjunct qs0))
-        exs0]
-  )
-  | True = eval (context [] exs'qs0) (Eval q'exs1 (eval [] exs'qs0))
+        exs0)]
+  ))
+  | True = case subResults of
+             Success r -> map eval subContexts (Eval q'exs1 r)
+             Error -> ([], Error)
+  where
+    subResults = eval [] ex'qs0
 
 {-
 context ctx ex@(
@@ -873,5 +902,5 @@ ctx |- ????????
 --TODO: Just calling eval might not be correct, because it might only return a partial result
 --      when it has an error... for now we're just assuming this is the correct implementation for
 --      simplicity. Will come back to it later.
-uncheckedEval :: Context -> Expression -> [Expression]
-uncheckedEval ctx ex = resultToList $ snd $ eval ctx ex
+--uncheckedEval :: Context -> Expression -> [Expression]
+--uncheckedEval ctx ex = resultToList $ eval (ctx, ex)
