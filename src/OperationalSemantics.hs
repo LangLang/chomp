@@ -244,10 +244,10 @@ conjunctContext ctx@(c:cs) ex = if matches /= [] then matches else conjunctConte
 mapSnd :: (a -> b) -> (c,a) -> (c,b)
 mapSnd f (a,b) = (a, f b)
 
-mapEval :: (Expression -> Expression) -> ThunkResult -> ThunkResult
+mapEval :: ([Expression] -> Expression) -> ThunkResult -> ThunkResult
 mapEval f results =
   case results of
-    Success r -> mapResult eval (map (mapSnd f) r)
+    Success r -> mapResult eval $ map (mapSnd $ f . (:[])) r
     Error     -> Error
   where
     mapResult f [r]    = f r
@@ -348,13 +348,13 @@ eval (ctx@[], ex@(
         -------------
          ctx |- exs1
 -}
-{-
+
 eval (ctx, ex@(
     Eval
       (Witness (Conjunct exs1))
       [Top]
   ))
-  | True = Success [(ctx, exs1)
+  | True = Success $ map ((,) ctx) exs1
 
 {-
   2.1.4) First evaluate subqueries before evaluating the full query.
@@ -384,11 +384,7 @@ eval (ctx, ex@(
         (Witness (Conjunct qs0))
         exs0)]
   ))
-  | True = case subResults of
-             Success r -> map eval subContexts (Eval q'exs1 r)
-             Error -> ([], Error)
-  where
-    subResults = eval [] ex'qs0
+  | True = mapEval (Eval q'exs1) $ eval ([], ex'qs0)
 
 {-
 context ctx ex@(
