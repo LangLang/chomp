@@ -280,15 +280,6 @@ mapEvalWith octx exs = mapEval $ map ((,,) octx []) exs
 -- Evaluates a thunk (and expression inside a context)
 eval :: Thunk -> ResultThunk
 
-{-
-fullEval :: Context -> Expression -> ResultThunk
-fullEval ctx ex =
-  case evalResult of
-    Success exs -> Success $ zip (context $ E ctx ex) exs
-    Error -> Error
-  where
-    evalResult = eval $ E ctx ex
--}
 {- Evaluating a declaration has no effect
    --------------------------------------
 

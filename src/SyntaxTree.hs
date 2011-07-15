@@ -32,11 +32,11 @@ instance Show Expression where
   show Top            = "_"
   show (Eval lhs rhs) =
     case lhs of
-      Declare lhs            -> showExpr lhs ++ " -> " ++ showExpr rhs
-      Assert (Conjunct lhs)  -> showExpr lhs ++ ":" ++ showExpr rhs
-      Witness (Conjunct lhs) -> showExpr lhs ++ "." ++ showExpr rhs
-      Assert (Complement lhs)  -> showExpr lhs ++ "~~" ++ showExpr rhs
-      Witness (Complement lhs) -> showExpr lhs ++ "~" ++ showExpr rhs
+      Declare lhs               -> showExpr lhs ++ " -> " ++ showExpr rhs
+      Assert (Conjunct lhs)     -> showExpr lhs ++ ":" ++ showExpr rhs
+      Witness (Conjunct lhs)    -> showExpr lhs ++ "." ++ showExpr rhs
+      Assert (Complement lhs)   -> showExpr lhs ++ "~~" ++ showExpr rhs
+      Witness (Complement lhs)  -> showExpr lhs ++ "~" ++ showExpr rhs
     where
       showExpr []     = "(ERROR: EMPTY EXPRESSION LIST)"
       showExpr (e:[]) = show e
