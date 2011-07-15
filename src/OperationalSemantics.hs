@@ -389,7 +389,7 @@ eval (octx, ictx, ex@(
       (Witness (Conjunct exs1))
       [Top]
   ))
-  | True = Success $ map ((,,) (octx ++ ictx) []) exs1
+  | True = Success $ map ((,,) (ictx ++ octx) []) exs1
 
 {-
   2.1.4) First evaluate subqueries before evaluating the full query.
@@ -437,7 +437,7 @@ eval (octx, ictx, ex@(
           exs1)]))
       exs0
   ))
-  | True = mapEvalInner octx (\e -> Eval (Witness (Conjunct e)) exs0) $ eval (octx ++ ictx, [], ex'qs1)
+  | True = mapEvalInner octx (\e -> Eval (Witness (Conjunct e)) exs0) $ eval (ictx ++ octx, [], ex'qs1)
 
 {-
   2.2) Selecting a collection of expressions from another collection is equivalent to selecting the
