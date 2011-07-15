@@ -363,6 +363,10 @@ eval (octx@[], _, ex@(
 
          TODO: It is likely that we'll change the semantics of this rule into an error, see notes
                above.
+         TODO: Should the internal context really be appended to the internal context?
+              Problem is, it should when there is not context given on the right, but when there is
+              then doesn't it already include the outer context. (I.e. doesn't a subquery "return"
+              the outer context as its result?)
 
          octx |- _.(ictx |- exs1)
          ------------------------
@@ -394,11 +398,15 @@ eval (octx, ictx, ex@(
         query. The right-hand side may also have an internal context due to previously evaluated
         sub-queries.
 
-        octx |- exs0.(ictx |- exs1.qs1)
-        -------------------------------
+          octx |- exs0.(ictx |- exs1.qs1)
+        ------------------------------------
         octx |- exs0.(octx,ictx |- exs1.qs1)   with (octx,ictx |- exs1.q1) evaluated first
 
         TODO: This rule could possibly be extended to all types of queries...
+        TODO: Should the internal context really be appended to the internal context?
+              Problem is, it should when there is not context given on the right, but when there is
+              then doesn't it already include the outer context. (I.e. doesn't a subquery "return"
+              the outer context as its result?)
 -}
 
 eval (octx, _, ex@(
