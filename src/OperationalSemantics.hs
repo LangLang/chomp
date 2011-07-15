@@ -246,37 +246,36 @@ conjunctContext ctx@(c:cs) ex = if matches /= [] then matches else conjunctConte
 ---------------------------}
 
 
+mapEval :: [Thunk] -> ResultThunk
+mapEval []     = Success []
+mapEval [t]    = eval t
+mapEval (t:ts) =
+  case eval t of
+    Error -> Error
+    Success t' -> case mapEval ts of
+      Error       -> Error
+      Success ts' -> Success $ t' ++ ts'
+
 -- Transforms an existing expression within an outer context into a new (wrapper) expression
--- with an inner context a different outer context and then evaluates it
+-- with an inner context a different outer context and then evaluates it.
 mapEvalInner :: Context -> ([Expression] -> Expression) -> ResultThunk -> ResultThunk
 mapEvalInner octx f results =
   case results of
-    Success r -> mapResult eval $ map (mapThunkExpression $ f . (:[])) r
+    Success r -> mapEval $ map (mapThunkExpression $ f . (:[])) r
     Error     -> Error
   where
-    mapResult f [r]    = f r
-    mapResult f (r:rs) =
-      case f r of
-        Success r' -> case mapResult f rs of
-          Success rs' -> Success $ r' ++ rs'
-          Error -> Error
-        Error -> Error
     mapThunkExpression f (a,_,b) = (octx, a, f b)
 
 mapEvalOuter :: ([Expression] -> Expression) -> ResultThunk -> ResultThunk
 mapEvalOuter f results =
   case results of
-    Success r -> mapResult eval $ map (mapThunkExpression $ f . (:[])) r
+    Success r -> mapEval $ map (mapThunkExpression $ f . (:[])) r
     Error     -> Error
   where
-    mapResult f [r]    = f r
-    mapResult f (r:rs) =
-      case f r of
-        Success r' -> case mapResult f rs of
-          Success rs' -> Success $ r' ++ rs'
-          Error -> Error
-        Error -> Error
     mapThunkExpression f (a,b,c) = (a,b,f c)
+
+mapEvalWith :: Context -> [Expression] -> ResultThunk
+mapEvalWith octx exs = mapEval $ map ((,,) octx []) exs
 
 -- Evaluates a thunk (and expression inside a context)
 eval :: Thunk -> ResultThunk
@@ -305,11 +304,22 @@ fullEval ctx ex =
         octx |- exs0 -> exs1
 -}
 
-eval ctx ex@(Eval (Declare []) exs1)
+eval (octx, _, ex@(
+    Eval
+      (Declare [])
+      exs1
+  ))
   | True = Success []
 
-eval ctx ex@(Eval (Declare exs0) exs1)
-  | True = Success [ex]
+eval (octx, _, ex@(
+    Eval
+      (Declare exs0)
+      exs1
+  ))
+  | True = case mapEval $ map ((,,) octx []) exs0 of
+      Success [] -> Success []
+      Success _  -> Success [(octx, [], ex)]
+      Error      -> Error
 
 {-
    1.? Evaluate an 'inductive' arrow
