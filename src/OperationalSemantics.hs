@@ -319,16 +319,16 @@ fullEval ctx ex =
         a turnstile. (This is just a convenience that lets us make empty scope implicit, it has no
         effect on the actual operational semantics)
 
-        () |- exs0.exs1
-        ---------------
-           exs0.exs1
+        () |- exs0.(() |- exs1)
+        -----------------------
+               exs0.exs1
 
   2.1.1) Selecting any collection of expressions from Bottom produces Bottom, regardless of the
          context.
 
-        octx |- ().exs1
-        ---------------
-              ()
+        octx |- ().(ictx |- exs1)
+        -------------------------
+                   ()
 -}
 
 eval (_, _, ex@(
@@ -341,9 +341,9 @@ eval (_, _, ex@(
 {-
   2.1.2) Selecting any collection of expressions from an atom produces Bottom (nothing).
 
-        't0'.exs1
-        ---------
-           ()
+        't0'.(ictx |- exs1)
+        -------------------
+                ()
 -}
 
 eval (octx@[], _, ex@(
