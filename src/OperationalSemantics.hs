@@ -522,14 +522,31 @@ eval (octx, ictx, ex@(
        context of the left-hand side, only if the left-hand side does not evaluate to Bottom.
        This holds regardless of the context.
 
-          ctx |- (() -> rhs0)._
-        --------------------------
+        octx |- (() -> rhs0)._
+        ----------------------
                   ()
+
+        octx |- (exs0 -> _)._         (This rule is implicit except that context can be discarded)
+        ---------------------
+                  _
 
          ctx |- (exs0 -> rhs0)._
         -------------------------
         ctx, exs0 -> rhs0 |- rhs0
 -}
+
+eval (octx, _, ex@(
+    Eval
+      (Witness (Conjunct [Top]))
+      [ex'exs0@(Eval
+        (Declare exs0)
+        [Top])]
+  ))
+  | True =
+    case mapEvalWith octx exs0 of
+      Success [] -> Success []
+      Success _  -> Success [([], [], Top)]
+      Error      -> Error
 
 eval (octx, _, ex@(
     Eval
@@ -545,16 +562,32 @@ eval (octx, _, ex@(
       Error      -> Error
 
 {-
-  2.?) Selecting an expression from a declaration with multiple domains is equivalent to selecting
-       from multiple declarations with a single domain.
-
-               ((e0 es0) -> rhs0).exs1
+  2.?)
+         octx |- (exs0 -> 'a').(ictx |- 'b')
         --------------------------------------
-        ((e0 -> rhs0).exs1 (es0 -> rhs0).exs1)
+                        ()
 
-        --- But does the value BEFORE the arrow matter at all? Why split it up?
-        --- Note that we should indeed think about context however.... TODO
+        octx |- (exs0 -> 'a').(ictx |- 'a')
+        -------------------------------------
+              octx, exs0 -> 'a' |- 'a'
 
+        octx |- (exs0 -> _).(ictx |- 'a')
+        -------------------------------------
+              octx, exs0 -> 'a' |- 'a'
+-}
+{-
+eval (octx, _, ex@(
+    Eval
+      q'exs1@(Witness (Conjunct [Symbol b]))
+      [Eval
+        (Declare (e0:es0))
+        rhs0]
+  ))
+  | True = eval (Eval q'exs1 [Eval (Declare [e0]) rhs0])
+            `collect` eval [] (Eval q'exs1 [Eval (Declare es0) rhs0])
+-}
+{- Selecting multiple expression from a declaration is equivalent to selecting each expression
+   individually, except for context...... TODO
 
                (ex0 -> rhs0).(e1 es1)
         ------------------------------------
@@ -565,18 +598,8 @@ eval (octx, _, ex@(
         ((ex0 -> rhs0).(e1 -> rhs1) (ex0 -> rhs0).(es1 -> rhs1))
 -}
 
-{-
-eval ctx@[] ex@(
-    Eval
-      q'exs1@(Witness (Conjunct exs1))
-      [Eval
-        (Declare (e0:es0))
-        rhs0]
-  )
-  | True = eval [] (Eval q'exs1 [Eval (Declare [e0]) rhs0])
-            `collect` eval [] (Eval q'exs1 [Eval (Declare es0) rhs0])
--}
--- TODO ...
+
+
 
 {-
   2.4.1) Selecting an expression from a declaration matches the right-hand side of the expression
