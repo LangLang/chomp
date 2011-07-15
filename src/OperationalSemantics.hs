@@ -331,7 +331,7 @@ fullEval ctx ex =
               ()
 -}
 
-eval (octx, _, ex@(
+eval (_, _, ex@(
     Eval
       (Witness (Conjunct exs1))
       []
@@ -361,17 +361,20 @@ eval (octx@[], _, ex@(
          perhaps the semantics should technically be to return a context of Top. It is possible
          that this would simply return an error or a warning in the future)
 
-        octx |- _.exs1
-        -------------
-         octx |- exs1
+         TODO: It is likely that we'll change the semantics of this rule into an error, see notes
+               above.
+
+         octx |- _.(ictx |- exs1)
+         ------------------------
+            octx,ictx |- exs1
 -}
 
-eval (octx, _, ex@(
+eval (octx, ictx, ex@(
     Eval
       (Witness (Conjunct exs1))
       [Top]
   ))
-  | True = Success $ map ((,,) octx []) exs1
+  | True = Success $ map ((,,) (octx ++ ictx) []) exs1
 
 {-
   2.1.4) First evaluate subqueries before evaluating the full query.
