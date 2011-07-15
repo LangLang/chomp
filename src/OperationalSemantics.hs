@@ -500,19 +500,23 @@ eval (octx, ictx, ex@(
         --------------------------
                   ()
 
-          ctx |- (ex0 -> rhs0)._
-        --------------------------
-        ctx, ex0 -> rhs0 |- rhs0
+         ctx |- (exs0 -> rhs0)._
+        -------------------------
+        ctx, exs0 -> rhs0 |- rhs0
 -}
 
 eval (octx, _, ex@(
     Eval
       (Witness (Conjunct [Top]))
-      [exs'ex0@(Eval
-        (Declare ex0)
+      [ex'exs0@(Eval
+        (Declare exs0)
         rhs0)]
   ))
-  | True = Success $ map ((,,) (exs'ex0:octx) []) rhs0
+  | True =
+    case mapEvalWith octx exs0 of
+      Success [] -> Success []
+      Success _  -> Success $ map ((,,) (ex'exs0:octx) []) rhs0
+      Error      -> Error
 
 {-
   2.?) Selecting an expression from a declaration with multiple domains is equivalent to selecting
