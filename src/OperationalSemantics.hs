@@ -132,10 +132,11 @@ scopeEmpty = (0,[])
 -- Note: It may be more efficient to use a finger tree to store the various paths of a context,
 --       however, we are more concerned with correctness and simplicity than efficiency at this
 --       stage.
-type Context = [Scope]
+--type Context = [Scope]
+type Context = [Expression]
 
-contextEmpty :: Context
-contextEmpty = [scopeEmpty]
+--contextEmpty :: Context
+--contextEmpty = [scopeEmpty]
 
 --instance Show Context where
 --  show c = ""
@@ -291,24 +292,33 @@ fullEval ctx ex =
 -}
 {- Evaluating a declaration has no effect
    --------------------------------------
-   Only queries can be evaluated
 
-   1.1) Evaluate a normal arrow
-        (TODO: Not sure if writing the context like this for arrows is correct)
+   1.1) Evaluating a declaration simply returns the declaration itself, unless the domain of the
+        arrow is Bottom (I.e. there are no symbols in the domain to attach an arrow to)
 
-        (ctx |- exs0) -> exs1
+        octx |- () -> exs1
         -------------------
-        (ctx |- exs0) -> exs1
+                ()
 
-   1.2) Evaluate an 'inductive' arrow
-
-        (ctx |- exs0) ->: exs1
+        octx |- exs0 -> exs1
         -------------------
-        (ctx |- exs0) ->: exs1
+        octx |- exs0 -> exs1
 -}
 
---eval ctx ex@(Eval (Declare exs0) exs1)
---  | True = Success [ex]
+eval ctx ex@(Eval (Declare []) exs1)
+  | True = Success []
+
+eval ctx ex@(Eval (Declare exs0) exs1)
+  | True = Success [ex]
+
+{-
+   1.? Evaluate an 'inductive' arrow
+       TODO: this might complicate rule 1.1
+
+        ctx |- exs0 ->: exs1
+        --------------------
+        ctx |- exs0 ->: exs1
+-}
 
 
 {-
@@ -434,65 +444,74 @@ eval (octx, ictx, ex@(
        versa...
        This holds regardless of the context given.
 
-                ctx |- (e0 es0).exs1
-        -------------------------------------
-        ((ctx |- e0.exs1)  (ctx |- es0.exs1))
+       TODO: This rule does not work yet... inner/outer contexts not handled correctly
 
-                ctx |- ex0.(e1 es1)
-        -----------------------------------
-        ((ctx |- ex0.e1)  (ctx |- ex0.es1))
+                               octx |- (e0 es0).(ictx |- exs1)
+        -----------------------------------------------------------------------------
+        ((octx,(e0 es0) |- e0.(ictx |- exs1))  (octx,(e0 es0) |- es0.(ictx |- exs1)))
+
+                    octx |- ex0.(ictx |- (e1 es1))
+        -------------------------------------------------------
+        ((octx |- ex0.(ictx,(e1 es) |- e1))  (ctx |- ex0.(ictx,(e1 es) |- es1)))
 -}
 {-
-eval ctx ex@(
+eval (octx, ictx, ex@(
     Eval
       q'exs1@(Witness (Conjunct exs1))
       (e0:es0)
-  )
+  ))
   | True = eval ctx (Eval q'exs1 [e0])
             `collect` eval ctx (Eval q'exs1 es0)
--}
+
 --context ctx@[] ex@(Eval (Witness (Conjunct exs1)) (e0:es0))
 --  | True = context [] (Eval (Witness (Conjunct exs1)) [e0])
 --            ++ context [] (Eval (Witness (Conjunct exs1)) es0)
 
+-}
+{- 2.? Query with a symbol on the left-hand side
 
-{-
-  TODO:
+        octx |- 't0'.(ictx |- ex1)
+        --------------------------
+            ({octx}.'t0').ex1
+-}
 
-                   't0'.ex1
-        ctx |- ----------------
-               ({ctx}.'t0').ex1
+{- 2.?  Query with an arrow on the left-hand side
 
-                 ctx |- (ex0 -> rhs0).ex1
+                 octx |- ('t0' -> r0 -> rs0).(ictx |- (e0 -> es0))
         ------------------------------------------
-        ctx |- ({ctx}.(ex0 -> rhs0) {ctx}.ex0).ex1
+        octx |- ({octx}.(ex0 -> rhs0) {octx}.ex0).(ictx |- ex1)
+-}
+
+{- 2.?  Query with an arrow on the left-hand side
+
+                 octx |- (ex0 -> rhs0).(ictx |- ex1)
+        ------------------------------------------
+        octx |- ({octx}.(ex0 -> rhs0) {octx}.ex0).(ictx |- ex1)
 -}
 
 
 {-
   2.3) Selecting Top from a declaration returns the right-hand side of the arrow in the
-       context of the left-hand side.
+       context of the left-hand side, only if the left-hand side does not evaluate to Bottom.
        This holds regardless of the context.
+
+          ctx |- (() -> rhs0)._
+        --------------------------
+                  ()
 
           ctx |- (ex0 -> rhs0)._
         --------------------------
-        ctx |- ex0 -> rhs0 |- rhs0
+        ctx, ex0 -> rhs0 |- rhs0
 -}
 
-{-
-eval ctx ex@(
+eval (octx, _, ex@(
     Eval
       (Witness (Conjunct [Top]))
-      [Eval
+      [exs'ex0@(Eval
         (Declare ex0)
-        rhs0]
-  )
-  | True = Success rhs0
--}
-
---context ctx@[] ex@(Eval (Witness (Conjunct [Top])) exs0@[(Eval (Declare ex0) rhs0)])
---  | True = [exs0]
-
+        rhs0)]
+  ))
+  | True = Success $ map ((,,) (exs'ex0:octx) []) rhs0
 
 {-
   2.?) Selecting an expression from a declaration with multiple domains is equivalent to selecting
@@ -532,7 +551,9 @@ eval ctx@[] ex@(
   2.4.1) Selecting an expression from a declaration matches the right-hand side of the expression
          against the right-hand side of the declaration.
          Note that ex0 can be complex expression like (d -> c -> f), so selecting
-         ((d -> c -> f) -> a).a will still return a regardless of the structure of ex0
+         ((d -> c -> f) -> a).a will still return a regardless of the structure of ex0.
+         However, ex0 must not be Bottom, thus it needs to be evaluated first to determine whether
+         it is enhabitted by any values.
 
         (ex0 -> a).a
         -------------
@@ -551,7 +572,7 @@ eval ctx@[] ex@(
         (Declare ex0)
         [a]]
   )
-  | a == b    = Success exs0
+  | a == b    = if eval ex0 not empty then Success exs0
   -- | otherwise = Success []  (Handled in 2.10)
 -}
 {-
