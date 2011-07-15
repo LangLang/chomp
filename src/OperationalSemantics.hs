@@ -38,7 +38,8 @@ module OperationalSemantics where
       In addition, the following conventions are typically used for variable names:
       * ex            A single expression
       * exs@(e:es)    A list of expressions
-      * ctx@(c:cs)    A context (given by a list of scopes)
+      * octx@(o:os)   The outer (or left-hand side) context (given by a list of scopes)
+      * ictx@(i:is)   The inner (or right-hand side) context (given by a list of scopes)
       * r             A result
       * 't'           A symbol (represented by the token "t")
       * <c>           The environment of a scope c
@@ -139,16 +140,20 @@ contextEmpty = [scopeEmpty]
 --instance Show Context where
 --  show c = ""
 
-type Thunk = (Context, Expression)
+-- A thunk contains two contexts - an outer (or left-hand side) context and an inner (right-hand
+-- side) context.
+-- In other words when a query is written octx |- exs0.(ictx |- exs1), then octx refers to the
+-- outer context and ictx refers to the inner context.
+type Thunk = (Context, Context, Expression)
 
 -- The result of a computation. Allows eval to return Error
 -- type Result = Maybe [Expression]
 data Result a = Success [a] | Error
-type EvalResult = Result Expression
-type ThunkResult = Result Thunk
+type ResultExpression = Result Expression
+type ResultThunk = Result Thunk
 
 -- Auxiliary functions
-
+{-
 -- Convert an empty list to an "error" result and a non-empty list to "success"
 --listToResult :: [a] -> Result a
 --listToResult [] = Error
@@ -161,7 +166,7 @@ resultToList Error       = []
 
 -- Map a evaluation function over a set of expression and the fold the list into a Result
 -- This function short-circuits as soon as an error is reached
-foldEval :: (Expression -> EvalResult) -> [Expression] -> EvalResult
+foldEval :: (Expression -> ResultExpression) -> [Expression] -> ResultExpression
 foldEval f (e:es) =
   case f e of
     (Success exs') -> case foldEval f es of
@@ -171,14 +176,14 @@ foldEval f (e:es) =
 
 -- Collect the results of two queries into one
 -- (It is convenient to use this function infix similar to (++))
-collect :: EvalResult -> EvalResult -> EvalResult
+collect :: ResultExpression -> ResultExpression -> ResultExpression
 collect a b = Success $ resultToList a ++ resultToList b
 
 -- Convert a collection into a result
 assert :: [a] -> Result a
 assert [] = Error
 assert l  = Success l
-
+-}
 
 {---------------------------- OLD
 
@@ -240,14 +245,12 @@ conjunctContext ctx@(c:cs) ex = if matches /= [] then matches else conjunctConte
 ---------------------------}
 
 
-
-mapSnd :: (a -> b) -> (c,a) -> (c,b)
-mapSnd f (a,b) = (a, f b)
-
-mapEval :: ([Expression] -> Expression) -> ThunkResult -> ThunkResult
-mapEval f results =
+-- Transforms an existing expression within an outer context into a new (wrapper) expression
+-- with an inner context a different outer context and then evaluates it
+mapEvalInner :: Context -> ([Expression] -> Expression) -> ResultThunk -> ResultThunk
+mapEvalInner octx f results =
   case results of
-    Success r -> mapResult eval $ map (mapSnd $ f . (:[])) r
+    Success r -> mapResult eval $ map (mapThunkExpression $ f . (:[])) r
     Error     -> Error
   where
     mapResult f [r]    = f r
@@ -257,13 +260,28 @@ mapEval f results =
           Success rs' -> Success $ r' ++ rs'
           Error -> Error
         Error -> Error
+    mapThunkExpression f (a,_,b) = (octx, a, f b)
 
+mapEvalOuter :: ([Expression] -> Expression) -> ResultThunk -> ResultThunk
+mapEvalOuter f results =
+  case results of
+    Success r -> mapResult eval $ map (mapThunkExpression $ f . (:[])) r
+    Error     -> Error
+  where
+    mapResult f [r]    = f r
+    mapResult f (r:rs) =
+      case f r of
+        Success r' -> case mapResult f rs of
+          Success rs' -> Success $ r' ++ rs'
+          Error -> Error
+        Error -> Error
+    mapThunkExpression f (a,b,c) = (a,b,f c)
 
--- Evaluates the expression inside the stack of contexts given
-eval :: Thunk -> ThunkResult
+-- Evaluates a thunk (and expression inside a context)
+eval :: Thunk -> ResultThunk
 
 {-
-fullEval :: Context -> Expression -> ThunkResult
+fullEval :: Context -> Expression -> ResultThunk
 fullEval ctx ex =
   case evalResult of
     Success exs -> Success $ zip (context $ E ctx ex) exs
@@ -308,18 +326,17 @@ fullEval ctx ex =
   2.1.1) Selecting any collection of expressions from Bottom produces Bottom, regardless of the
          context.
 
-        ctx |- ().exs1
-        --------------
-             ()
+        octx |- ().exs1
+        ---------------
+              ()
 -}
 
-eval (ctx, ex@(
+eval (octx, _, ex@(
     Eval
       (Witness (Conjunct exs1))
       []
   ))
   | True = Success []
-
 
 {-
   2.1.2) Selecting any collection of expressions from an atom produces Bottom (nothing).
@@ -329,7 +346,7 @@ eval (ctx, ex@(
            ()
 -}
 
-eval (ctx@[], ex@(
+eval (octx@[], _, ex@(
     Eval
       (Witness (Conjunct exs1))
       [Symbol t0]
@@ -344,74 +361,61 @@ eval (ctx@[], ex@(
          perhaps the semantics should technically be to return a context of Top. It is possible
          that this would simply return an error or a warning in the future)
 
-        ctx |- _.exs1
+        octx |- _.exs1
         -------------
-         ctx |- exs1
+         octx |- exs1
 -}
 
-eval (ctx, ex@(
+eval (octx, _, ex@(
     Eval
       (Witness (Conjunct exs1))
       [Top]
   ))
-  | True = Success $ map ((,) ctx) exs1
+  | True = Success $ map ((,,) octx []) exs1
 
 {-
   2.1.4) First evaluate subqueries before evaluating the full query.
 
         In the first case the context returned from the left-hand subquery is carried over to the
-        main query.
+        main query. Note that this also is the natural bracketing for a query of the form
+        'exs0.qs0.exs1'. Note that it can never happen that exs1 is the result of a query evaluated
+        on the right-hand side because the left-hand side is always fully evaluated first (due to
+        the order of these two rules) - thus exs1 cannot have an internal context.
 
-        (exs0.qs0).exs1
-        ---------------
-             ????          (First evaluate (exs0.qs0))
+        octx |- (exs0.qs0).exs1
+        -----------------------
+        (octx |- exs0.qs0).exs1   with (octx |- exs0.qs0) evaluated first
 
-        In the second case the context returned from the right-hand subquery is dropped when
-        evaluating the main query. Also the left-hand side collection does not affect the right-hand
-        side subquery in any way (I.e. no context is passed to the subquery either)
+        In the second case, note that the left-hand side collection does not affect the right-hand
+        side subquery in any way, although the context passed in to this rule may affect either
+        query. The right-hand side may also have an internal context due to previously evaluated
+        sub-queries.
 
-        exs0.(exs1.qs1)
-        ---------------
-             ????          (First evaluate (exs1.q1))
+        octx |- exs0.(ictx |- exs1.qs1)
+        -------------------------------
+        octx |- exs0.(octx,ictx |- exs1.qs1)   with (octx,ictx |- exs1.q1) evaluated first
 
-       TODO: This rule could possibly be extended to all types of queries...
+        TODO: This rule could possibly be extended to all types of queries...
 -}
 
-eval (ctx, ex@(
+eval (octx, _, ex@(
     Eval
       q'exs1@(Witness (Conjunct exs1))
       [ex'qs0@(Eval
         (Witness (Conjunct qs0))
         exs0)]
   ))
-  | True = mapEval (Eval q'exs1) $ eval ([], ex'qs0)
+  | True = mapEvalOuter (Eval q'exs1) $ eval (octx, [], ex'qs0)
 
-{-
-context ctx ex@(
-    Eval
-      q'exs1@(Witness (Conjunct exs1))
-      exs'qs0@[Eval
-        (Witness (Conjunct qs0))
-        exs0]
-  )
-  -- TODO: Is this 100% correct?
-  | True = context (context [] exs'qs0) (Eval q'exs1 (eval [] exs'qs0))
-
--}
-{-
-eval ctx ex@(
+eval (octx, ictx, ex@(
     Eval
       (Witness (Conjunct
-        exs'qs1@[Eval
+        [ex'qs1@(Eval
           (Witness (Conjunct qs1))
-          exs1]))
+          exs1)]))
       exs0
-  )
-  | True = eval [] (Eval (Witness (Conjunct (eval [] exs'qs1))) exs0)
--}
-
-
---}
+  ))
+  | True = mapEvalInner octx (\e -> Eval (Witness (Conjunct e)) exs0) $ eval (octx ++ ictx, [], ex'qs1)
 
 {-
   2.2) Selecting a collection of expressions from another collection is equivalent to selecting the
