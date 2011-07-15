@@ -280,9 +280,35 @@ mapEvalWith octx exs = mapEval $ map ((,,) octx []) exs
 -- Evaluates a thunk (and expression inside a context)
 eval :: Thunk -> ResultThunk
 
-{- Evaluating a declaration has no effect
-   --------------------------------------
+{- Evaluating symbols
+   ------------------
+   ?) Evaluating any symbol has no effect
 
+        octx |- 't'
+        -----------
+        octx |- 't'
+
+        octx |- _
+        ---------
+        octx |- _
+
+        octx |- ()    (This rule is implicit in mapEval)
+        ----------
+            ()
+-}
+
+eval thunk@(octx, _, ex@(
+    Symbol t
+  ))
+  | True = Success [thunk]
+
+eval thunk@(octx, _, ex@(
+    Top
+  ))
+  | True = Success [thunk]
+
+{- Evaluating a declarations
+   -------------------------
    1.1) Evaluating a declaration simply returns the declaration itself, unless the domain of the
         arrow is Bottom (I.e. there are no symbols in the domain to attach an arrow to)
 
@@ -302,14 +328,14 @@ eval (octx, _, ex@(
   ))
   | True = Success []
 
-eval (octx, _, ex@(
+eval thunk@(octx, _, ex@(
     Eval
       (Declare exs0)
       exs1
   ))
   | True = case mapEval $ map ((,,) octx []) exs0 of
       Success [] -> Success []
-      Success _  -> Success [(octx, [], ex)]
+      Success _  -> Success [thunk]
       Error      -> Error
 
 {-
