@@ -574,6 +574,8 @@ eval (octx, _, ex@(
         octx |- (exs0 -> _).(ictx |- 'a')
         -------------------------------------
               octx, exs0 -> 'a' |- 'a'
+
+        TODO: But does the inner context have no effect?
 -}
 
 eval (octx, _, ex@(
