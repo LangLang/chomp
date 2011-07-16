@@ -149,7 +149,7 @@ type Thunk = (Context, Context, Expression)
 
 -- The result of a computation. Allows eval to return Error
 -- type Result = Maybe [Expression]
-data Result a = Success [a] | Error
+data Result a = Success [a] | Error deriving Eq
 type ResultExpression = Result Expression
 type ResultThunk = Result Thunk
 
@@ -575,17 +575,28 @@ eval (octx, _, ex@(
         -------------------------------------
               octx, exs0 -> 'a' |- 'a'
 -}
-{-
+
 eval (octx, _, ex@(
     Eval
-      q'exs1@(Witness (Conjunct [Symbol b]))
-      [Eval
-        (Declare (e0:es0))
-        rhs0]
+      q'exs1@(Witness (Conjunct
+        [Symbol b]))
+      [ex'exs0@(Eval
+        (Declare exs0)
+        [s'a@(Symbol a)])]
   ))
-  | True = eval (Eval q'exs1 [Eval (Declare [e0]) rhs0])
-            `collect` eval [] (Eval q'exs1 [Eval (Declare es0) rhs0])
--}
+  | a == b    = if mapEvalWith octx exs0 == Error then Error else Success [((ex'exs0:octx), [], s'a)]
+  | otherwise = if mapEvalWith octx exs0 == Error then Error else Success []
+
+eval (octx, _, ex@(
+    Eval
+      q'exs1@(Witness (Conjunct
+        [s'a@(Symbol a)]))
+      [ex'exs0@(Eval
+        (Declare exs0)
+        [Top])]
+  ))
+  | True      = if mapEvalWith octx exs0 == Error then Error else Success [((ex'exs0:octx), [], s'a)]
+
 {- Selecting multiple expression from a declaration is equivalent to selecting each expression
    individually, except for context...... TODO
 
