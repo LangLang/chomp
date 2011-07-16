@@ -471,30 +471,33 @@ eval (octx, ictx, ex@(
        versa...
        This holds regardless of the context given.
 
-       TODO: This rule does not work yet... inner/outer contexts not handled correctly
+       NOTE: This function could likely be made a bit more efficient by recognizing that the entire
+             (e0 es0) will likely end up on the left-hand side of the turnstile, but we're keeping
+             it clear & simple for now.
 
                                octx |- (e0 es0).(ictx |- exs1)
-        -----------------------------------------------------------------------------
-        ((octx,(e0 es0) |- e0.(ictx |- exs1))  (octx,(e0 es0) |- es0.(ictx |- exs1)))
+        ------------------------------------------------------------------
+        ((octx,es0 |- e0.(ictx |- exs1))  (octx,e0 |- es0.(ictx |- exs1)))
 
-                    octx |- ex0.(ictx |- (e1 es1))
-        -------------------------------------------------------
-        ((octx |- ex0.(ictx,(e1 es) |- e1))  (ctx |- ex0.(ictx,(e1 es) |- es1)))
+                        octx |- ex0.(ictx |- (e1 es1))
+        ---------------------------------------------------------------
+        ((octx |- ex0.(ictx,es1 |- e1))  (octx |- ex0.(ictx,e1 |- es1)))
 -}
-{-
+
 eval (octx, ictx, ex@(
     Eval
       q'exs1@(Witness (Conjunct exs1))
       (e0:es0)
   ))
-  | True = eval ctx (Eval q'exs1 [e0])
-            `collect` eval ctx (Eval q'exs1 es0)
+  | True = mapEval [(es0 ++ octx, ictx, Eval q'exs1 [e0]), (e0:octx, ictx, Eval q'exs1 es0)]
 
---context ctx@[] ex@(Eval (Witness (Conjunct exs1)) (e0:es0))
---  | True = context [] (Eval (Witness (Conjunct exs1)) [e0])
---            ++ context [] (Eval (Witness (Conjunct exs1)) es0)
+eval (octx, ictx, ex@(
+    Eval
+      (Witness (Conjunct (e1:es1)))
+      exs'ex0@[ex0]
+  ))
+  | True = mapEval [(octx, es1 ++ ictx, Eval (Witness (Conjunct [e1])) exs'ex0), (octx, e1:ictx, Eval (Witness (Conjunct es1)) exs'ex0)]
 
--}
 {- 2.? Query with a symbol on the left-hand side
 
         octx |- 't0'.(ictx |- ex1)
@@ -572,10 +575,8 @@ eval (octx, _, ex@(
               octx, exs0 -> 'a' |- 'a'
 
         octx |- (exs0 -> _).(ictx |- 'a')
-        -------------------------------------
-              octx, exs0 -> 'a' |- 'a'
-
-        TODO: But does the inner context have no effect?
+        ---------------------------------
+         octx, exs0 -> 'a', ictx |- 'a'
 -}
 
 eval (octx, _, ex@(
@@ -589,7 +590,7 @@ eval (octx, _, ex@(
   | a == b    = if mapEvalWith octx exs0 == Error then Error else Success [((ex'exs0:octx), [], s'a)]
   | otherwise = if mapEvalWith octx exs0 == Error then Error else Success []
 
-eval (octx, _, ex@(
+eval (octx, ictx, ex@(
     Eval
       q'exs1@(Witness (Conjunct
         [s'a@(Symbol a)]))
@@ -597,7 +598,7 @@ eval (octx, _, ex@(
         (Declare exs0)
         [Top])]
   ))
-  | True      = if mapEvalWith octx exs0 == Error then Error else Success [((ex'exs0:octx), [], s'a)]
+  | True      = if mapEvalWith octx exs0 == Error then Error else Success [((ex'exs0:(ictx ++ octx)), [], s'a)]
 
 {- Selecting multiple expression from a declaration is equivalent to selecting each expression
    individually, except for context...... TODO
