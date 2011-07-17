@@ -473,7 +473,10 @@ eval (octx, ictx, ex@(
        I.e. (a -> b -> c  a -> d -> e).(b d) must be rewritten as (a -> (b -> c  d -> e)).(b d).
        Similarly ((a -> b) -> c  (a -> b) -> d).(b d) must be rewritten ((a -> b) -> (c d)).(b d).
        And  ((a -> b) -> c  (a -> (b x)) -> d) is rewritten ((a -> b) -> (c d)  (a -> x) -> d)
-       And  ((a -> b) -> c  (a -> _) -> d) is rewritten ((a -> b) -> (c d)  (a -> _~b) -> d)?????
+
+       So ((a -> b) -> c -> e  (a -> _) -> d) is rewritten ((a -> b) -> (c -> e d) (a -> _~b) -> d)?
+       I.e. selecting d from the above expression gives
+       (((a -> b), (c -> e) |- d)  ((a -> _~b) |- d))
 
        NOTE: Initially it may be tempting to imagine that this rewriting can be done before-hand,
              however it cannot because new definitions with shared domains can be introduced by
@@ -483,6 +486,8 @@ eval (octx, ictx, ex@(
              (e0 es0) will likely end up on the left-hand side of the turnstile, but we're keeping
              it clear & simple for now.
 
+
+        TODO: FIX THE SEMANTICS/IMPLEMENTATION FOR THIS ONE
                                octx |- (e0 es0).(ictx |- exs1)
         ------------------------------------------------------------------
         ((octx,es0 |- e0.(ictx |- exs1))  (octx,e0 |- es0.(ictx |- exs1)))
