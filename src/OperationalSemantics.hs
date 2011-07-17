@@ -466,10 +466,18 @@ eval (octx, ictx, ex@(
   | True = mapEvalInner octx (\e -> Eval (Witness (Conjunct e)) exs0) $ eval (ictx ++ octx, [], ex'qs1)
 
 {-
-  2.2) Selecting a collection of expressions from another collection is equivalent to selecting the
-       (right-hand side) collection from each element of the left-hand side collection and vice
-       versa...
-       This holds regardless of the context given.
+  2.2) Selecting a collection of expressions from another collection is equivalent to selecting each
+       right-hand side element from the entire left-hand side collection, however when there are
+       multiple elements in the left-hand side they must be grouped according to the shared domain
+
+       I.e. (a -> b -> c  a -> d -> e).(b d) must be rewritten as (a -> (b -> c  d -> e)).(b d).
+       Similarly ((a -> b) -> c  (a -> b) -> d).(b d) must be rewritten ((a -> b) -> (c d)).(b d).
+       And  ((a -> b) -> c  (a -> (b x)) -> d) is rewritten ((a -> b) -> (c d)  (a -> x) -> d)
+       And  ((a -> b) -> c  (a -> _) -> d) is rewritten ((a -> b) -> (c d)  (a -> _~b) -> d)?????
+
+       NOTE: Initially it may be tempting to imagine that this rewriting can be done before-hand,
+             however it cannot because new definitions with shared domains can be introduced by
+             querying.
 
        NOTE: This function could likely be made a bit more efficient by recognizing that the entire
              (e0 es0) will likely end up on the left-hand side of the turnstile, but we're keeping
