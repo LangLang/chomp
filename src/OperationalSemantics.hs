@@ -277,6 +277,11 @@ mapEvalOuter f results =
 mapEvalWith :: Context -> [Expression] -> ResultThunk
 mapEvalWith octx exs = mapEval $ map ((,,) octx []) exs
 
+
+-- Attempts to match the left-hand side of an expression
+--matchLHS :: [Expression] -> [Expression] -> [Expression]
+--matchLHS context exp =
+
 -- Evaluates a thunk (and expression inside a context)
 eval :: Thunk -> ResultThunk
 
@@ -467,8 +472,15 @@ eval (octx, ictx, ex@(
 
 {-
   2.2) Selecting a collection of expressions from another collection is equivalent to selecting each
-       right-hand side element from the entire left-hand side collection, however when there are
-       multiple elements in the left-hand side they must be grouped according to the shared domain
+       right-hand side element from the entire left-hand side collection.
+
+                        octx |- ex0.(ictx |- (e1 es1))
+        ---------------------------------------------------------------
+        ((octx |- ex0.(ictx,es1 |- e1))  (octx |- ex0.(ictx,e1 |- es1)))
+
+
+       However when there are multiple elements in the left-hand side they must be grouped according
+       to the shared domain.
 
        I.e. (a -> b -> c  a -> d -> e).(b d) must be rewritten as (a -> (b -> c  d -> e)).(b d).
        Similarly ((a -> b) -> c  (a -> b) -> d).(b d) must be rewritten ((a -> b) -> (c d)).(b d).
@@ -477,6 +489,7 @@ eval (octx, ictx, ex@(
        So ((a -> b) -> c -> e  (a -> _) -> d) is rewritten ((a -> b) -> (c -> e d) (a -> _~b) -> d)?
        I.e. selecting d from the above expression gives
        (((a -> b), (c -> e) |- d)  ((a -> _~b  a -> b -> _) |- d))
+       Note that in this case _~b is necessarily left unevaluated
 
        NOTE: Initially it may be tempting to imagine that this rewriting can be done before-hand,
              however it cannot because new definitions with shared domains can be introduced by
@@ -486,16 +499,23 @@ eval (octx, ictx, ex@(
              (e0 es0) will likely end up on the left-hand side of the turnstile, but we're keeping
              it clear & simple for now.
 
+        octx |- ('t0' es0).(ictx |- exs1)
+        ---------------------------------
+           octx |- es0.(ictx |- exs1)
 
-        TODO: FIX THE SEMANTICS/IMPLEMENTATION FOR THIS ONE
-                               octx |- (e0 es0).(ictx |- exs1)
-        ------------------------------------------------------------------
-        ((octx,es0 |- e0.(ictx |- exs1))  (octx,e0 |- es0.(ictx |- exs1)))
+                                  octx |- (e0 -> rhs0  es0).(ictx |- exs1)
+        ---------------------------------------------------------------------------------------------
+        ((octx,es0,{es0}.e0 |- (e0 -> rhs0).(ictx |- exs1))  (octx,e0 -> rhs0 |- es0.(ictx |- exs1)))
 
-                        octx |- ex0.(ictx |- (e1 es1))
-        ---------------------------------------------------------------
-        ((octx |- ex0.(ictx,es1 |- e1))  (octx |- ex0.(ictx,e1 |- es1)))
+
 -}
+
+eval (octx, ictx, ex@(
+    Eval
+      (Witness (Conjunct (e1:es1)))
+      exs'ex0@[ex0]
+  ))
+  | True = mapEval [(octx, es1 ++ ictx, Eval (Witness (Conjunct [e1])) exs'ex0), (octx, e1:ictx, Eval (Witness (Conjunct es1)) exs'ex0)]
 
 eval (octx, ictx, ex@(
     Eval
@@ -505,12 +525,7 @@ eval (octx, ictx, ex@(
   | True = mapEval [(es0 ++ octx, ictx, Eval q'exs1 [e0]), (e0:octx, ictx, Eval q'exs1 es0)]
   -- | True = TODO
 
-eval (octx, ictx, ex@(
-    Eval
-      (Witness (Conjunct (e1:es1)))
-      exs'ex0@[ex0]
-  ))
-  | True = mapEval [(octx, es1 ++ ictx, Eval (Witness (Conjunct [e1])) exs'ex0), (octx, e1:ictx, Eval (Witness (Conjunct es1)) exs'ex0)]
+
 
 {- 2.?) Query with a symbol on the left-hand side. This may return a different context as the query
         looks "up" in the context.
