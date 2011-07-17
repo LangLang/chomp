@@ -25,6 +25,8 @@ data ExpressionSegment = Declare [Expression]  -- (R->)
 data Expression = Symbol Token
                 | Top
                 | Eval ExpressionSegment [Expression]
+                -- | Negative [Expression]     -- (possibly _~(exs), but let's see if we can simply
+                --                             -- use (Eval (Complement exs) [Top]) in a lazy manner
                 deriving (Eq)
 
 instance Show Expression where

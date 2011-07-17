@@ -476,7 +476,7 @@ eval (octx, ictx, ex@(
 
        So ((a -> b) -> c -> e  (a -> _) -> d) is rewritten ((a -> b) -> (c -> e d) (a -> _~b) -> d)?
        I.e. selecting d from the above expression gives
-       (((a -> b), (c -> e) |- d)  ((a -> _~b) |- d))
+       (((a -> b), (c -> e) |- d)  ((a -> _~b  a -> b -> _) |- d))
 
        NOTE: Initially it may be tempting to imagine that this rewriting can be done before-hand,
              however it cannot because new definitions with shared domains can be introduced by
@@ -503,6 +503,7 @@ eval (octx, ictx, ex@(
       (e0:es0)
   ))
   | True = mapEval [(es0 ++ octx, ictx, Eval q'exs1 [e0]), (e0:octx, ictx, Eval q'exs1 es0)]
+  -- | True = TODO
 
 eval (octx, ictx, ex@(
     Eval
@@ -915,6 +916,7 @@ eval ctx@[] ex@(
 {-
 eval ctx@[] ex = Success []
 -}
+
 
 {-
   Evaluate conjunct queries against a context
