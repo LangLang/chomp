@@ -498,13 +498,33 @@ eval (octx, ictx, ex@(
   ))
   | True = mapEval [(octx, es1 ++ ictx, Eval (Witness (Conjunct [e1])) exs'ex0), (octx, e1:ictx, Eval (Witness (Conjunct es1)) exs'ex0)]
 
-{- 2.? Query with a symbol on the left-hand side
+{- 2.?) Query with a symbol on the left-hand side. This may return a different context as the query
+        looks "up" in the context.
+
+        octx |- 't0'._
+        ---------------
+        ({octx}.'t0')._
+
+        octx |- 't0'.(ictx |- +'t1')
+        --------------------------
+            ({octx}.'t0').'t1'
 
         octx |- 't0'.(ictx |- ex1)
         --------------------------
             ({octx}.'t0').ex1
 -}
+{-
 
+ TODO: BUSY HERE - Just realized the context being passed in probably is not correct
+
+eval (octx, ictx, ex@(
+    Eval
+      (Witness (Conjunct [Top]))
+      (Symbol t0)
+  ))
+  | True =
+
+-}
 {- 2.?  Query with an arrow on the left-hand side
 
                  octx |- ('t0' -> r0 -> rs0).(ictx |- (e0 -> es0))
