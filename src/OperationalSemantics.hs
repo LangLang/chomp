@@ -38,8 +38,9 @@ module OperationalSemantics where
       In addition, the following conventions are typically used for variable names:
       * ex            A single expression
       * exs@(e:es)    A list of expressions
-      * octx@(o:os)   The outer (or left-hand side) context (given by a list of scopes)
-      * ictx@(i:is)   The inner (or right-hand side) context (given by a list of scopes)
+      * octx@(o:os)   The outer (or left-hand side) context
+      * ictx@(i:is)   The inner (or right-hand side) context
+      * s             The scope (environment and focus)
       * r             A result
       * 't'           A symbol (represented by the token "t")
       * <c>           The environment of a scope c
@@ -100,21 +101,46 @@ import SyntaxTree
 -- Top level semantics
 
 -- A scope is a collection of expressions where one expression is singled out as the "focus".
--- Scope variable will typically be used to construct a Context which is a stack of scopes.
--- Many operations must ignore the expression that has "focus", so the Scope type provides higher
--- order functions that eliminate the need to deal with the focus expression directly.
--- Scope is implemented using integer to index the focus and a list of expressions
+-- The scope is typically the last collection that acted as the domain for a query operation.
+-- Passing along this scope separately from a context allows us to extract the codomain of a shared
+-- parent domain and adding it to the context (as used in rule 2.2 currently)
+-- Unlike context, scope cannot be modified or returned from an eval. It is used internally only.
+--
+-- TODO: Expand/clarify on the reasons why this is necessary once it becomes more clear...
+--       Perhaps as follows:
+--
+-- Scope is only necessary in order to deal with collections - when the evaluator encounters a
+-- composite operation that has a collection on the left-hand side, it needs to split up those
+-- operations (divide & conquer) without loosing scope information (the other declarations in the
+-- same collection. If collections were restricted to one expression only, then scope will always be
+-- empty and can be removed.
+--
+-- The scope in a sense is used to pass along contextual information when the eval function cannot
+-- immediately determine what information needs to go into the context and once it can that
+-- information is already lost. Only one level of scope need to be passed along to any eval function
+-- all other scoping information is captured in the context.
+-- Thus the scope holds a kind of delayed context which is not refined immediately, only later on
+-- when a base case is reached.
+--
+-- TODO: It is possible that in the future the scope may also be used to memoize the result of
+--       queries directly inside the scope, avoiding duplicate computations and possibly simplifying
+--       lookup into the context.
+--
+-- Scope is implemented using an integer to index the focus and a list of expressions.
 
 type Scope = (Int, [Expression])
 
 scopeFocus :: Scope -> Expression
 scopeFocus (i,exs) = exs !! i
 
-scopeFocusLHS :: Scope -> [Expression]
-scopeFocusLHS s = lhs $ scopeFocus s
-  where
-    lhs (Eval (Declare lhsExs) rhs) = lhsExs
-    lhs _ = error "IMPOSSIBLE ERROR: Only declarations can be the scope focus."
+--scopeFocusLHS :: Scope -> [Expression]
+--scopeFocusLHS s = lhs $ scopeFocus s
+--  where
+--    lhs (Eval (Declare lhsExs) rhs) = lhsExs
+--    lhs _ = error "IMPOSSIBLE ERROR: Only declarations can be the scope focus."
+
+--scopeFocusRHS :: Scope -> [Expression]
+--scopeFocusRHS s =
 
 scopeEnv :: Scope -> [Expression]
 scopeEnv (i,[])  = []
@@ -126,10 +152,10 @@ scopeMap f s = map f $ scopeEnv s
 scopeEmpty :: Scope
 scopeEmpty = (0,[])
 
--- A context is the path (stack of arrow declarations) leading to the current computation
--- The path consists of a list of scopes, each of which is a collection of expression plus a focus
+-- A context is the path (stack of arrow declarations) along with the relevant expressions in scope
+-- that leads to the current computation
 -- Note that the top of the stack is the head of the list
--- Note: It may be more efficient to use a finger tree to store the various paths of a context,
+-- Note: It may (?) be more efficient to use a finger tree to store the various paths of a context,
 --       however, we are more concerned with correctness and simplicity than efficiency at this
 --       stage.
 --type Context = [Scope]
@@ -246,6 +272,7 @@ conjunctContext ctx@(c:cs) ex = if matches /= [] then matches else conjunctConte
 ---------------------------}
 
 
+--mapEval :: Scope -> [Thunk] -> ResultThunk
 mapEval :: [Thunk] -> ResultThunk
 mapEval []     = Success []
 mapEval [t]    = eval t
@@ -258,6 +285,7 @@ mapEval (t:ts) =
 
 -- Transforms an existing expression within an outer context into a new (wrapper) expression
 -- with an inner context a different outer context and then evaluates it.
+--mapEvalInner :: Scope -> Context -> ([Expression] -> Expression) -> ResultThunk -> ResultThunk
 mapEvalInner :: Context -> ([Expression] -> Expression) -> ResultThunk -> ResultThunk
 mapEvalInner octx f results =
   case results of
@@ -266,6 +294,7 @@ mapEvalInner octx f results =
   where
     mapThunkExpression f (a,_,b) = (octx, a, f b)
 
+--mapEvalOuter :: Scope -> ([Expression] -> Expression) -> ResultThunk -> ResultThunk
 mapEvalOuter :: ([Expression] -> Expression) -> ResultThunk -> ResultThunk
 mapEvalOuter f results =
   case results of
@@ -274,15 +303,12 @@ mapEvalOuter f results =
   where
     mapThunkExpression f (a,b,c) = (a,b,f c)
 
+--mapEvalWith :: Scope -> Context -> [Expression] -> ResultThunk
 mapEvalWith :: Context -> [Expression] -> ResultThunk
-mapEvalWith octx exs = mapEval $ map ((,,) octx []) exs
-
-
--- Attempts to match the left-hand side of an expression
---matchLHS :: [Expression] -> [Expression] -> [Expression]
---matchLHS context exp =
+mapEvalWith s octx exs = mapEval $ map ((,,) octx []) exs
 
 -- Evaluates a thunk (and expression inside a context)
+--eval :: Scope -> Thunk -> ResultThunk
 eval :: Thunk -> ResultThunk
 
 {- Evaluating symbols
@@ -316,6 +342,7 @@ eval thunk@(octx, _, ex@(
    -------------------------
    1.1) Evaluating a declaration simply returns the declaration itself, unless the domain of the
         arrow is Bottom (I.e. there are no symbols in the domain to attach an arrow to)
+        Note that the domain needs to be evaluated to determine if it is empty.
 
         octx |- () -> exs1
         -------------------
@@ -338,7 +365,7 @@ eval thunk@(octx, _, ex@(
       (Declare exs0)
       exs1
   ))
-  | True = case mapEval $ map ((,,) octx []) exs0 of
+  | True = case mapEval(0,exs0) $ map ((,,) octx []) exs0 of
       Success [] -> Success []
       Success _  -> Success [thunk]
       Error      -> Error
@@ -410,17 +437,33 @@ eval (octx@[], _, ex@(
               then doesn't it already include the outer context. (I.e. doesn't a subquery "return"
               the outer context as its result?)
 
-         octx |- _.(ictx |- exs1)
-         ------------------------
-            octx,ictx |- exs1
--}
+         OLD:
 
+         octx,[s] |- _.(ictx |- exs1)
+         ---------------------------
+            octx,[s],ictx |- exs1
+
+        NEW:
+
+        octx |- _.(ictx |- exs1)
+         -----------------------
+                Error
+-}
+{- OLD:
 eval (octx, ictx, ex@(
     Eval
       (Witness (Conjunct exs1))
       [Top]
   ))
-  | True = Success $ map ((,,) (ictx ++ octx) []) exs1
+  | True = Success $ map ((,,) (ictx ++ (snd s) ++ octx) []) exs1
+-}
+--{- NEW:
+eval (octx, ictx, ex@(
+    Eval
+      (Witness (Conjunct exs1))
+      [Top]
+  ))
+  | True = Error
 
 {-
   2.1.4) First evaluate subqueries before evaluating the full query.
@@ -451,6 +494,9 @@ eval (octx, ictx, ex@(
               the outer context as its result?)
 -}
 
+-- TODO: Not sure whether this should pass through the scope to both evals?
+--       Possibly pass through an empty scope instead?
+
 eval (octx, _, ex@(
     Eval
       q'exs1@(Witness (Conjunct exs1))
@@ -459,6 +505,10 @@ eval (octx, _, ex@(
         exs0)]
   ))
   | True = mapEvalOuter (Eval q'exs1) $ eval (octx, [], ex'qs0)
+
+
+-- TODO: Not sure whether this should pass through the scope to both evals?
+--       Possibly pass through an empty scope instead?
 
 eval (octx, ictx, ex@(
     Eval
@@ -491,6 +541,24 @@ eval (octx, ictx, ex@(
        (((a -> b), (c -> e) |- d)  ((a -> _~b  a -> b -> _) |- d))
        Note that in this case _~b is necessarily left unevaluated
 
+       However, (a -> _~b  a -> b -> _) is equivalent to (a -> _) because even though a -> b is not
+       included in this collection, it doesn't matter: b can be selected from a -> b -> _ and
+       there's no way to select b without getting b -> _ (I.e. can't select b -> () because an arrow
+       to nothing does not exist)
+
+       Therefore the query above can simply evaluate to (((a -> b), (c -> e) |- d)  (a -> _ |- d))
+
+
+       This makes things quite complex unfortunately:
+
+       Unfortunately it is not possible to calculate the intersection of two sets using the calculus
+       itself. I.e. {a -> b -> c}.(a -> b) returns (a -> b -> c) not (a -> b) (this would have been
+       different if we made it necessary to select (a -> b -> _) or perhaps possible to select with
+       (a -> b -> ()) explicitly. The first seems more "correct" while the second seems more user
+       friendly)
+
+
+
        NOTE: Initially it may be tempting to imagine that this rewriting can be done before-hand,
              however it cannot because new definitions with shared domains can be introduced by
              querying.
@@ -503,11 +571,17 @@ eval (octx, ictx, ex@(
         ---------------------------------
            octx |- es0.(ictx |- exs1)
 
+        OLD DEFINITION WHERE WE TRY TO CONSTRUCT CONTEXT DIRECTLY:
+
                                   octx |- (e0 -> rhs0  es0).(ictx |- exs1)
         ---------------------------------------------------------------------------------------------
-        ((octx,es0,{es0}.e0 |- (e0 -> rhs0).(ictx |- exs1))  (octx,e0 -> rhs0 |- es0.(ictx |- exs1)))
+        ((octx,es0,scope.e0 |- (e0 -> rhs0).(ictx |- exs1))  (octx,e0 -> rhs0 |- es0.(ictx |- exs1)))
 
+        NEW RECURSIVE DEFINITION WHERE SCOPE IS PASSED ALONG AND ADDED TO CONTEXT DURING THE EVAL:
 
+                        octx,[scope] |- (e0 -> rhs0  es0).(ictx |- exs1)
+        -----------------------------------------------------------------------------
+        ((octx,scope,{scope}.e0._ |- (e0 -> rhs0).(ictx |- exs1))  (octx,[scope] |- es0.(ictx |- exs1)))
 -}
 
 eval (octx, ictx, ex@(
@@ -517,13 +591,30 @@ eval (octx, ictx, ex@(
   ))
   | True = mapEval [(octx, es1 ++ ictx, Eval (Witness (Conjunct [e1])) exs'ex0), (octx, e1:ictx, Eval (Witness (Conjunct es1)) exs'ex0)]
 
+
 eval (octx, ictx, ex@(
     Eval
       q'exs1@(Witness (Conjunct exs1))
-      (e0:es0)
+      exs0@(e0:es0)
   ))
   | True = mapEval [(es0 ++ octx, ictx, Eval q'exs1 [e0]), (e0:octx, ictx, Eval q'exs1 es0)]
+  where
+    intersectDomains scope ex =
+
+    recurse scope exs0@(e0:es0) q'exs1@(Witness (Conjunct exs1)) =
+      mapEval [(scope ++ octx, ictx, Eval q'exs1 [e0]),
+
+  {- TODO: BUSY HERE
+  where
+    recurse scope (octx, ictx, ex@(
+        Eval
+          q'exs1@(Witness (Conjunct exs1))
+          exs0@(e0:es0)
+      ))
+      | True ==
+    scope = if snd s == [] then (0,exs0) else s
   -- | True = TODO
+  -}
 
 
 
