@@ -13,13 +13,14 @@ import Data.ByteString.Char8 (pack)
 {-                              IMPLEMENTATION                              -}
 type Token      = B.ByteString
 
-data Query = Conjunct [Expression]             -- (.Q)
-           | Complement [Expression]           -- (~Q)
+data Query = Conjunct [Expression]                   -- (.Q)
+           | Complement [Expression]                 -- (~Q)
            deriving (Eq)
 
-data ExpressionSegment = Declare [Expression]  -- (R->)
-                       | Assert Query          -- assert `dot` (.Q)   or    (:Q)
-                       | Witness Query         -- (.Q)
+data ExpressionSegment = Declare [Expression]        -- (R->)
+                       -- | LambdaDeclare (Maybe Token) -- (\S->)
+                       | Assert Query                -- assert `dot` (.Q)   or    (:Q)
+                       | Witness Query               -- (.Q)
                        deriving (Eq)
 
 data Expression = Symbol Token
