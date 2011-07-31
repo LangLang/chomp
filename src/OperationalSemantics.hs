@@ -87,6 +87,29 @@ module OperationalSemantics where
         This is not equivalent to either a.(b -> c b:c _) or (a.(b:c) a.(b -> c) a._) and might be
         indicative of further bugs in the implementation (although assertions have not yet
         been implemented, so technically this is not a problem yet)
+
+   TODO:
+      + (2011-07-28)
+        We are writing too much boilerplate with Success, Error results at the moment. It will be
+        good to investigate a better interface for this in future.
+
+      + (2011-07-31)
+        Looking at evalConjunctMatch (in matches) and rules like octx |- (e00 e01 ... e0n).exs1 it
+        seems like it MIGHT be more correct to make Context = [Thunk] as a sort of memoization
+        mechanism.
+        I.e. A thunk carries computational content inside its context.
+        However, getting this to be perfomant/correct sounds like it might be challenging and will
+        require some thought. I.e. we might want the the context to be modified in place using
+        something like the State monad.
+        I.e. In a way the context acts like the program "heap" (it is referentially transparent,
+        but never-the-less we want to modify it in place in order to PARTIALLY memoize and avoid
+        infinite loops. Should the domain at every level of the context stack be fully evaluated?
+        Actually, since collections are conceptually evaluated simultaneously, using lightweight
+        threads (sparks?) together with transactional memory might be the simplest implementation of
+        this idea. Actually in a more optimized implementation we might use some specialized
+        scheduling algorithm that partitions collections according to dependencies
+        (using dataflow analysis?). In fact, it would be nice to create specialized data structures
+        along the way (possibly transactional data structures).
 -}
 
 {-                                 MODULES                                  -}
@@ -159,7 +182,7 @@ scopeEmpty = (0,[])
 --       however, we are more concerned with correctness and simplicity than efficiency at this
 --       stage.
 --type Context = [Scope]
-type Context = [Expression]
+type Context = [[Expression]]
 
 --contextEmpty :: Context
 --contextEmpty = [scopeEmpty]
@@ -210,7 +233,7 @@ assert [] = Error
 assert l  = Success l
 -}
 
-mapResult :: (a -> Result a) -> [a] -> Result a
+mapResult :: (a -> Result b) -> [a] -> Result b
 mapResult f []     = Success []
 mapResult f [t]    = f t
 mapResult f (t:ts) =
@@ -261,18 +284,31 @@ mapEvalWith octx exs = mapEval $ map ((,) octx) exs
 
 -- Evaluates an expression against the left-hand side domain of a collection (usually the context)
 -- and returns the right-hand side.
-evalConjunctMatch :: [Expression] -> Expression -> [Expression]
-evalConjunctMatch exs matchEx = concatMap matches exs
+evalConjunctMatch :: Context -> Expression -> Expression -> ResultThunk
+evalConjunctMatch ctx@(c:cs) lhs rhs =
+  case mapResult (lhsmatches ctx) c of
+    Success r ->
+      case evalConjunctMatch cs lhs rhs of
+        Success rs -> Success $ r ++ rs
+        Error      -> Error
+    Error     -> Error
   where
-    matches Top        = [Top]
-    matches (Symbol _) = []
-    matches (Eval (Declare domain) codomain) =
-      if any (== matchEx) domain
-        then codomain
-        else concatMap matches domain
-    matches (Eval (Assert _) _)  = error "Fatal Error (evalConjunctMatch): In the current implementation the context domain must not have embedded queries."
-    matches (Eval (Witness _) _) = error "Fatal Error (evalConjunctMatch): In the current implementation the context domain must not have embedded queries."
-    matches _                    = error "Fatal Error (evalConjunctMatch): Unknown expression pattern."
+    evalCodomain codomain = mapEvalWith codomain
+
+    lhsMatches :: Context -> Expression -> ResultThunk
+    lhsMatches ctx Top        = Success [([], Top)]
+    lhsMatches ctx (Symbol _) = Success []
+    lhsMatches ctx (Eval (Declare domain) codomain) =
+      if any (== lhs) domain
+        -- then Success $ (map ((,) ctx) codomain)
+        then (TODO: perform rhsMatches.....)
+        else mapResult (matches ctx) domain
+    lhsMatches ctx (Eval (Assert _) _)  = error "Fatal Error (evalConjunctMatch): In the current implementation the context domain must not have embedded queries."
+    lhsMatches ctx (Eval (Witness _) _) = error "Fatal Error (evalConjunctMatch): In the current implementation the context domain must not have embedded queries."
+    lhsMatches ctx _                    = error "Fatal Error (evalConjunctMatch): Unknown expression pattern."
+
+    rhsMatches :: Context -> Expression -> ResultThunk
+    rhsMatches ctx Top        = Success [([], Top)]
 
 
 
@@ -409,11 +445,9 @@ eval (octx, ex@(
       [Top]
   ))
   | True =
-    case innerResult of
-      Success r -> Success $ map (((,) [Top]) . snd) r
+    case mapEvalWith octx exs1 of
+      Success r -> Success $ map (((,) [[Top]]) . snd) r
       Error     -> Error
-  where
-    innerResult = mapEvalWith octx exs1
 
 {-
   2.1.4) First evaluate subqueries before evaluating the full query.
@@ -466,59 +500,80 @@ eval (octx, ex@(
   2.2) Selecting a collection of expressions from another collection is equivalent to selecting each
        right-hand side element from the entire left-hand side collection and vica versa
 
-               octx |- ex0.(e1 es1)
-        ------------------------------------
-        (octx |- ex0.e1  octx |- ex0.es1)
+                              octx |- (e00 e01 ... e0n).exs1
+        ---------------------------------------------------------------------------------
+        ((octx,(e00 e01 ... e0n) |- e00.exs1)  ...  (octx,(e00 e01 ... e0n) |- e0n.exs1))
 
+          (Note: (e00 ... e0n) must be explicitly evaluated inside the context the collection
+          provides)
 
-                  octx |- (e0 es0).exs1
-        ------------------------------------------
-        (octx,es0 |- e0.exs1  octx,e0 |- es0.exs1)    (Note: this could probably be made more
-                                                      efficient by simply appending the entire exs0
-                                                      to the context and then evaluating each query
-                                                      without adding its domain - but this is more
-                                                      clear for now)
+                                octx |- ex0.(e10 e11 ... e1n)
+        ---------------------------------------------------------------------------------------------------
+        ((octx |- ex0.(octx,(e10 e11 ... e1n) |- e10))  ...  (octx |- ex0.(octx,(e10 e11 ... e1n) |- e1n)))
+
+          (Note: (e10 ... e1n) must be explicitly evaluated inside the context the collection
+          provides)
+
+      TODO: This implementation is not quite correct. Each (e00/e10 ... e0n/e1n) must be evaluated
+            yet the collection simultaneously requires itself as a context while it is being
+            evaluated.
+            See evalConjunctMatch: it currently requires each domain in the context to be fully
+            memoized.
+            We might need to create a specialized version of mapEvalWith to take this into account
+            E.g. evalCollection
 -}
-
-eval (octx, ex@(
-    Eval
-      (Witness (Conjunct (e1:es1)))
-      exs'ex0@[ex0]
-  ))
-  | True = mapEval [(octx, Eval (Witness (Conjunct [e1])) exs'ex0), (octx, Eval (Witness (Conjunct es1)) exs'ex0)]
 
 eval (octx, ex@(
     Eval
       q'exs1@(Witness (Conjunct exs1))
       exs0@(e0:es0)
   ))
-  | True = mapEval [(es0 ++ octx, Eval q'exs1 [e0]), (e0:octx,  Eval q'exs1 es0)]
+  | True = mapEvalOuter (\e0 -> Eval q'exs1 e0) eval'exs0
+  where
+    eval'exs0 = mapEvalWith (exs0:octx) exs0
+    -- TODO: This version does not memoize exs0 in the context of eval'exs0, which may be
+    --       problematic. I.e. we do not have
+    --       eval'exs0 = mapEvalWith (eval'exs0:octx) exs0
+    --       since eval'exs0 is being evaluated. We also can't substitute (eval'exs0:octx) on the
+    --       outside because the context may also be modified by evaluating by exs0
 
-{- 2.?) Query with a symbol on the left-hand side. This may return a different context as the query
-        looks "up" in the context.
+eval (octx, ex@(
+    Eval
+      (Witness (Conjunct exs1@(e1:es1)))
+      exs'ex0@[ex0]
+  ))
+  | True = mapEvalInner octx (\e1 -> Eval (Witness (Conjunct e1)) exs'ex0) eval'exs1
+  where
+    eval'exs1 = mapEvalWith (exs1:octx) exs1
 
-            octx |- 't0'._
-        ----------------------
-        ({octx}.('t0' -> _))._
+{- 2.?) Query with a symbol on the left-hand side. This may return a different (smaller context as
+        the query looks "up" in the context.
 
-            octx |- 't0'.'t1'
-        --------------------------
-        ({octx}.('t0' -> _)).'t1'
-
-            octx |- 't0'.ex1
+             octx |- 't0'.ex1
         ------------------------
         ({octx}.('t0' -> _)).ex1
 
         Note: The implementation might differ a bit from the semantics here simply for performance
         reasons
+
+        (Lemmas:
+
+             octx |- 't0'._
+          ----------------------
+          ({octx}.('t0' -> _))._
+
+              octx |- 't0'.'t1'
+          --------------------------
+          ({octx}.('t0' -> _)).'t1'
+        )
 -}
 
 eval (octx, ex@(
     Eval
       (Witness (Conjunct [ex1]))
-      [Symbol t0]
+      [ex't0@(Symbol t0)]
   ))
-  | True = evalConjunctMatch octx t0 ex1
+  | True = evalConjunctMatch octx ex't0 ex1
 
 
 {- 2.?  Query with an arrow on the left-hand side
@@ -554,18 +609,18 @@ eval (octx, ex@(
         ctx, exs0 -> rhs0 |- rhs0
 -}
 
- eval (octx, ex@(
-    Eval
-      (Witness (Conjunct [Top]))
-      [ex'exs0@(Eval
-        (Declare exs0)
-        [Top])]
-  ))
-  | True =
-    case mapEvalWith octx exs0 of
-      Success [] -> Success []
-      Success _  -> Success [([], [], Top)]
-      Error      -> Error
+-- eval (octx, ex@(
+--    Eval
+--      (Witness (Conjunct [Top]))
+--      [ex'exs0@(Eval
+--        (Declare exs0)
+--        [Top])]
+--  ))
+--  | True =
+--    case mapEvalWith octx exs0 of
+--      Success [] -> Success []
+--      Success _  -> Success [([], [], Top)]
+--      Error      -> Error
 
 eval (octx, ex@(
     Eval
@@ -614,7 +669,7 @@ eval (octx, ex@(
         (Declare exs0)
         [Top])]
   ))
-  | True      = if mapEvalWith octx exs0 == Error then Error else Success [((ex'exs0:(ictx ++ octx)), [], s'a)]
+  | True      = if mapEvalWith octx exs0 == Error then Error else Success [((ex'exs0:octx), [], s'a)]
 
 {- Selecting multiple expression from a declaration is equivalent to selecting each expression
    individually, except for context...... TODO
