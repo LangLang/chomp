@@ -243,6 +243,10 @@ mapResult f (t:ts) =
       Error       -> Error
       Success ts' -> Success $ t' ++ ts'
 
+mapResultResult :: (a -> Result b) -> Result a -> Result b
+mapResultResult f (Success r) = mapResult f r
+mapResultResult f Error       = Error
+
 {-
 mapEval :: [Thunk] -> ResultThunk
 mapEval []     = Success []
@@ -261,8 +265,8 @@ mapEval = mapResult eval
 -- Map eval over a new expression formed from an existing expression and context on the left-hand
 -- side (I.e. the existing expression is an "outer" expression)
 mapEvalOuter :: ([Expression] -> Expression) -> ResultThunk -> ResultThunk
-mapEvalOuter f results =
-  case results of
+mapEvalOuter f result =
+  case result of
     Success r -> mapEval $ map (mapThunk $ f . (:[])) r
     Error     -> Error
   where
@@ -271,8 +275,8 @@ mapEvalOuter f results =
 -- Map eval over a new expression formed from an existing expression on the right-hand side
 -- (I.e. the existing expression is an "inner" expression)
 mapEvalInner :: Context -> ([Expression] -> Expression) -> ResultThunk -> ResultThunk
-mapEvalInner octx f results =
-  case results of
+mapEvalInner octx f result =
+  case result of
     Success r -> mapEval $ map (mapThunk $ f . (:[])) r
     Error     -> Error
   where
@@ -280,13 +284,36 @@ mapEvalInner octx f results =
 
 -- Map eval over a list of expressions with a single context
 mapEvalWith :: Context -> [Expression] -> ResultThunk
-mapEvalWith octx exs = mapEval $ map ((,) octx) exs
+mapEvalWith ctx exs = mapEval $ map ((,) ctx) exs
+
+-- Evaluate two declarations in lock-step and
+{-
+evalConjunctLockStep :: [Expression] -> [Expression] -> [Expression] -> [Expression] -> Expression
+evalConjunctLockStep lhsDomain lhsCodomain rhsDomain rhsCodomain =
+    case matches lhsDomain rhsDomain of
+      Error          -> Error
+      Success domain ->
+        case matches lhsCodomain rhsCodomain of
+          Error             -> Error
+          Success codomain  -> Success (Eval (Declare domain) codomain)
+  where
+    matches :: [Expression] -> [Expression] -> ResultThunk
+    matches lhs rhs = liftM2 match lhs rhs
+      where
+        match :: Expression -> Expression -> ResultThunk
+        match lhs rhs =
+-}
+
+
+
 
 -- Evaluates an expression against the left-hand side domain of a collection (usually the context)
 -- and returns the right-hand side.
+-- ctx |- lhs.rhs
+{-
 evalConjunctMatch :: Context -> Expression -> Expression -> ResultThunk
 evalConjunctMatch ctx@(c:cs) lhs rhs =
-  case mapResult (lhsmatches ctx) c of
+  case mapResult (lhsMatches ctx) c of
     Success r ->
       case evalConjunctMatch cs lhs rhs of
         Success rs -> Success $ r ++ rs
@@ -299,19 +326,28 @@ evalConjunctMatch ctx@(c:cs) lhs rhs =
     lhsMatches ctx Top        = Success [([], Top)]
     lhsMatches ctx (Symbol _) = Success []
     lhsMatches ctx (Eval (Declare domain) codomain) =
-      if any (== lhs) domain
+      if any (lhs ==) domain
         -- then Success $ (map ((,) ctx) codomain)
-        then (TODO: perform rhsMatches.....)
-        else mapResult (matches ctx) domain
-    lhsMatches ctx (Eval (Assert _) _)  = error "Fatal Error (evalConjunctMatch): In the current implementation the context domain must not have embedded queries."
-    lhsMatches ctx (Eval (Witness _) _) = error "Fatal Error (evalConjunctMatch): In the current implementation the context domain must not have embedded queries."
-    lhsMatches ctx _                    = error "Fatal Error (evalConjunctMatch): Unknown expression pattern."
+        then (mapResultResult $ (rhsMatches ctx) . snd) $ mapEvalWith (domain:ctx) codomain
+        else mapResult (lhsMatches ctx) domain         -- TODO: $ mapEvalWith ctx domain?
+    lhsMatches ctx (Eval (Assert _) _)  = error "Fatal Error (Pre-condition for evalConjunctMatch): In the current implementation the context domain must not have embedded queries."
+    lhsMatches ctx (Eval (Witness _) _) = error "Fatal Error (Pre-condition for evalConjunctMatch): In the current implementation the context domain must not have embedded queries."
+    lhsMatches ctx _                    = error "Fatal Error (Pre-condition for evalConjunctMatch): Unknown expression pattern."
 
     rhsMatches :: Context -> Expression -> ResultThunk
-    rhsMatches ctx Top        = Success [([], Top)]
-
-
-
+    rhsMatches ctx Top =
+      Success [(ctx, rhs)]
+    rhsMatches ctx ex@(Symbol t) =
+      Success $ if rhs == ex || rhs == Top then [(ctx, ex)] else []
+    rhsMatches ctx ex@(Eval (Declare domain) codomain) =
+      if rhs == ex
+        --then Success [(ctx, ex)]
+        then
+        else mapResult (rhsMatches ctx) domain
+    rhsMatches ctx (Eval (Assert _) _)  = error "Fatal Error (Pre-condition for evalConjunctMatch): The context codomain should have been evaluated before rhsMatches is called."
+    rhsMatches ctx (Eval (Witness _) _) = error "Fatal Error (Pre-condition for evalConjunctMatch): The context codomain should have been evaluated before rhsMatches is called."
+    rhsMatches ctx _                    = error "Fatal Error (Pre-condition for evalConjunctMatch): Unknown expression pattern."
+-}
 
 -- Evaluates a thunk (and expression inside a context)
 eval :: Thunk -> ResultThunk
@@ -549,32 +585,52 @@ eval (octx, ex@(
 {- 2.?) Query with a symbol on the left-hand side. This may return a different (smaller context as
         the query looks "up" in the context.
 
-             octx |- 't0'.ex1
-        ------------------------
-        ({octx}.('t0' -> _)).ex1
+           c |- 't0'.ex1
+        --------------------
+        ({c}.('t0' -> _)).ex1
+
+                       cs,c |- 't0'.ex1
+        -------------------------------------------------
+        ((cs |- 't0'.ex1)  (cs |- ({c}.('t0' -> _)).ex1))
 
         Note: The implementation might differ a bit from the semantics here simply for performance
         reasons
 
         (Lemmas:
 
-             octx |- 't0'._
-          ----------------------
-          ({octx}.('t0' -> _))._
+                          cs,c |- 't0'._
+          ---------------------------------------------
+          ((cs |- 't0'._)  (cs |- ({c}.('t0' -> _))._))
 
-              octx |- 't0'.'t1'
-          --------------------------
-          ({octx}.('t0' -> _)).'t1'
+                         cs,c |- 't0'.'t1'
+          ------------------------------------------------------
+          ((cs |- 't0'.'t1')  (cs |- ({c}.('t0' -> 't1')).'t1'))
         )
 -}
 
-eval (octx, ex@(
+eval ([c], ex@(
     Eval
-      (Witness (Conjunct [ex1]))
+      q'ex1@(Witness (Conjunct [ex1]))
+      exs't0@[(Symbol t0)]
+  ))
+  | True = eval ([],
+      Eval
+        q'ex1
+        [Eval
+          (Witness (Conjunct [Eval (DeclareLambda Nothing) c]))
+          [Eval (Declare exs't0) [Top]]])
+
+
+eval (c:cs, ex@(
+    Eval
+      q'ex1@(Witness (Conjunct [ex1]))
       [ex't0@(Symbol t0)]
   ))
-  | True = evalConjunctMatch octx ex't0 ex1
-
+  | True = mapEvalWith cs [
+      ex,
+      Eval
+        (Witness (Conjunct [Eval (DeclareLambda Nothing) c]))
+        [Eval (Declare [Symbol t0]) [Top]]]
 
 {- 2.?  Query with an arrow on the left-hand side
 
@@ -596,12 +652,12 @@ eval (octx, ex@(
        context of the left-hand side, only if the left-hand side does not evaluate to Bottom.
        This holds regardless of the context.
 
-        octx |- (() -> rhs0)._
-        ----------------------
+        ctx |- (() -> rhs0)._
+        ---------------------
                   ()
 
-        octx |- (exs0 -> _)._         (This rule is implicit except that context can be discarded)
-        ---------------------
+        ctx |- (exs0 -> _)._      (This rule would be implicit except that context can be discarded)
+        --------------------
                   _
 
          ctx |- (exs0 -> rhs0)._
@@ -609,67 +665,72 @@ eval (octx, ex@(
         ctx, exs0 -> rhs0 |- rhs0
 -}
 
--- eval (octx, ex@(
---    Eval
---      (Witness (Conjunct [Top]))
---      [ex'exs0@(Eval
---        (Declare exs0)
---        [Top])]
---  ))
---  | True =
---    case mapEvalWith octx exs0 of
---      Success [] -> Success []
---      Success _  -> Success [([], [], Top)]
---      Error      -> Error
+eval (ctx, ex@(
+    Eval
+      (Witness (Conjunct [Top]))
+      [ex'exs0@(Eval
+        (Declare [])
+        rhs0)]
+  ))
+  | True = Success []
 
-eval (octx, ex@(
+eval (ctx, ex@(
     Eval
       (Witness (Conjunct [Top]))
       [ex'exs0@(Eval
         (Declare exs0)
-        rhs0)]
+        [Top])]
+  ))
+  | True = if mapEvalWith ctx exs0 == Error then Error else Success [([], Top)]
+
+eval (ctx, ex@(
+    Eval
+      (Witness (Conjunct [Top]))
+      exs'exs0@[Eval
+        (Declare exs0)
+        rhs0]
   ))
   | True =
-    case mapEvalWith octx exs0 of
+    case mapEvalWith ctx exs0 of
       Success [] -> Success []
-      Success _  -> Success $ map ((,,) (ex'exs0:octx) []) rhs0
+      Success _  -> Success $ map ((,) (exs'exs0:ctx)) rhs0
       Error      -> Error
 
 {-
   2.?)
-         octx |- (exs0 -> 'a').(ictx |- 'b')
-        --------------------------------------
-                        ()
+        ctx |- (exs0 -> 'a').'b'
+        ------------------------
+                  ()
 
-        octx |- (exs0 -> 'a').(ictx |- 'a')
-        -------------------------------------
-              octx, exs0 -> 'a' |- 'a'
+        ctx |- (exs0 -> 'a').'a'
+        ------------------------
+         ctx,exs0 -> 'a' |- 'a'
 
-        octx |- (exs0 -> _).(ictx |- 'a')
-        ---------------------------------
-         octx, exs0 -> 'a', ictx |- 'a'
+        ctx |- (exs0 -> _).'a'
+        ----------------------
+        ctx,exs0 -> 'a' |- 'a'
 -}
 
 eval (octx, ex@(
     Eval
       q'exs1@(Witness (Conjunct
         [Symbol b]))
-      [ex'exs0@(Eval
+      exs'exs0@[Eval
         (Declare exs0)
-        [s'a@(Symbol a)])]
+        [ex'a@(Symbol a)]]
   ))
-  | a == b    = if mapEvalWith octx exs0 == Error then Error else Success [((ex'exs0:octx), [], s'a)]
+  | a == b    = if mapEvalWith octx exs0 == Error then Error else Success [(exs'exs0:octx, ex'a)]
   | otherwise = if mapEvalWith octx exs0 == Error then Error else Success []
 
 eval (octx, ex@(
     Eval
       q'exs1@(Witness (Conjunct
-        [s'a@(Symbol a)]))
-      [ex'exs0@(Eval
+        [ex'a@(Symbol a)]))
+      exs'exs0@[Eval
         (Declare exs0)
-        [Top])]
+        [Top]]
   ))
-  | True      = if mapEvalWith octx exs0 == Error then Error else Success [((ex'exs0:octx), [], s'a)]
+  | True      = if mapEvalWith octx exs0 == Error then Error else Success [(exs'exs0:octx, ex'a)]
 
 {- Selecting multiple expression from a declaration is equivalent to selecting each expression
    individually, except for context...... TODO

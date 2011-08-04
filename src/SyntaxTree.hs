@@ -18,7 +18,7 @@ data Query = Conjunct [Expression]                   -- (.Q)
            deriving (Eq)
 
 data ExpressionSegment = Declare [Expression]        -- (R->)
-                       -- | LambdaDeclare (Maybe Token) -- (\S->)
+                       | DeclareLambda (Maybe Token) -- (\S->)
                        | Assert Query                -- assert `dot` (.Q)   or    (:Q)
                        | Witness Query               -- (.Q)
                        deriving (Eq)
