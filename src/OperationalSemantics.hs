@@ -275,12 +275,12 @@ mapEvalOuter f result =
 -- Map eval over a new expression formed from an existing expression on the right-hand side
 -- (I.e. the existing expression is an "inner" expression)
 mapEvalInner :: Context -> ([Expression] -> Expression) -> ResultThunk -> ResultThunk
-mapEvalInner octx f result =
+mapEvalInner ctx f result =
   case result of
     Success r -> mapEval $ map (mapThunk $ f . (:[])) r
     Error     -> Error
   where
-    mapThunk f (_,b) = (octx, f b)
+    mapThunk f (_,b) = (ctx, f b)
 
 -- Map eval over a list of expressions with a single context
 mapEvalWith :: Context -> [Expression] -> ResultThunk
@@ -352,95 +352,204 @@ evalConjunctMatch ctx@(c:cs) lhs rhs =
 -- Evaluates a thunk (and expression inside a context)
 eval :: Thunk -> ResultThunk
 
-{- Evaluating symbols
-   ------------------
-   ?) Evaluating any symbol has no effect
+{-  1. Atoms/symbols
+    ----------------
 
-        octx |- 't'
+    Evaluating any atom has no effect except to discard the context occasionally when it becomes
+    redundant
+
+    1.1)
+
+        ctx |- 't'
         -----------
-        octx |- 't'
+        ctx |- 't'
 
-        octx |- _
+    1.2)
+
+        ctx |- _
         ---------
-        octx |- _
+            _
 
-        octx |- ()    (This rule is implicit in mapEval)
+    1.a) This rule is applied implicitly through mapEval and related functions
+
+        ctx |- ()
         ----------
             ()
+
+    1.b) This rule is applied implicitly through mapEval and related functions
+
+              ctx |- (e es)
+        -------------------------
+        ((ctx |- e)  (ctx |- es))
 -}
 
-eval thunk@(octx, ex@(
+eval thunk@(ctx, ex@(
     Symbol t
   ))
   | True = Success [thunk]
 
-eval thunk@(octx, ex@(
+eval (ctx, ex@(
     Top
   ))
-  | True = Success [thunk]
+  | True = Success [([],Top)]
 
-{- Evaluating a declarations
-   -------------------------
-   1.1) Evaluating a declaration simply returns the declaration itself, unless the domain of the
-        arrow is Bottom (I.e. there are no symbols in the domain to attach an arrow to)
-        Note that the domain needs to be evaluated to determine if it is empty.
+{-  2. Declarations
+    ---------------
 
-        octx |- () -> exs1
+    Evaluating a declaration simply returns the declaration itself, unless the domain of the
+    arrow is Bottom (I.e. there are no symbols in the domain to attach an arrow to)
+    Note that the domain needs to be evaluated to determine if it is empty.
+
+    2.1)
+
+        ctx |- () -> exs1
         -------------------
                 ()
 
-        octx |- exs0 -> exs1
+    2.2)
+
+        ctx |- _ -> exs1
         -------------------
-        octx |- exs0 -> exs1
--}
+                _
 
-eval (octx, ex@(
-    Eval
-      (Declare [])
-      exs1
-  ))
-  | True = Success []
+    2.3)
 
-eval thunk@(octx, ex@(
-    Eval
-      (Declare exs0)
-      exs1
-  ))
-  | True = case mapEval $ map ((,) octx) exs0 of
-      Success [] -> Success []
-      Success _  -> Success [thunk]
-      Error      -> Error
+        ctx |- \ -> exs1
+        ----------------
+        ctx |- \ -> exs1
 
-{-
-   1.? Evaluate an 'inductive' arrow
-       TODO: this might complicate rule 1.1
+        ctx |- \t0 -> exs1
+        ----------------
+        ctx |- \t0 -> exs1
+
+    2.4)
+
+        ctx |- exs0 -> exs1
+        -------------------
+        ctx |- exs0 -> exs1
+
+    TODO: Does this rule need to be specially evaluated for proof purposes?
 
         ctx |- exs0 ->: exs1
         --------------------
         ctx |- exs0 ->: exs1
 -}
 
+-- 2.1
+eval (ctx, ex@(
+    Eval
+      (Declare [])
+      exs1
+  ))
+  | True = Success []
 
-{-
-  Evaluate conjunct queries outside of any context
-  ------------------------------------------------
+-- 2.2
+eval (ctx, ex@(
+    Eval
+      (Declare [Top])
+      exs1
+  ))
+  | True = Success [([],Top)]
 
-  Note) When assuming nothing / bottom (no context or scope given), we can rewrite the rule without
-        a turnstile. (This is just a convenience that lets us make empty scope implicit, it has no
-        effect on the actual operational semantics)
+-- 2.3
+eval thunk@(ctx, ex@(
+    Eval
+      (DeclareLambda _)
+      exs1
+  ))
+  | True = Success [thunk]
 
-        () |- exs0.exs1
-        ---------------
-           exs0.exs1
+-- 2.4
+eval thunk@(ctx, ex@(
+    Eval
+      (Declare exs0)
+      exs1
+  ))
+  | True = case mapEval $ map ((,) ctx) exs0 of
+      Success [] -> Success []
+      Success _  -> Success [thunk]
+      Error      -> Error
 
-  2.1.1) Selecting any collection of expressions from Bottom produces Bottom, regardless of the
-         context.
+{-  3. Conjunct Queries
+    -------------------
 
-        octx |- ().exs1
+    Simple queries varying expressions on the left-hand side
+
+    3.1.1)
+
+        ctx |- ().exs1
         ---------------
               ()
+
+    3.1.2) Selecting any collection of expressions from Top simply returns the collection in the
+           context of Top. This means that any query acting on the result of this computation will
+           succeed, however the result can still be used on the right-hand side of another query to
+           refine another codomain.
+
+         ctx |- _.exs1
+         --------------
+           _ |- exs1
+
+    3.1.3.1) Selecting any collection of expressions from an atom outside of any context produces
+             Bottom (nothing).
+
+        () |- 't0'.exs1
+        ---------------
+              ()
+
+    These two may return smaller contexts as symbols are looked up in the hierarchy.
+
+    3.1.3.2)
+
+           c |- 't0'.ex1
+        --------------------
+        ({c}.('t0' -> _)).ex1
+
+    3.1.3.3)
+
+                       cs,c |- 't0'.ex1
+        -------------------------------------------------
+        ((cs |- 't0'.ex1)  (cs |- ({c}.('t0' -> _)).ex1))
+
+
+    Also Note) Simple optimizations could be implemented for 3.1.3.2, 3.1.3.3
+
+                        cs,c |- 't0'._
+        ---------------------------------------------
+        ((cs |- 't0'._)  (cs |- ({c}.('t0' -> _))._))
+
+                       cs,c |- 't0'.'t1'
+        ------------------------------------------------------
+        ((cs |- 't0'.'t1')  (cs |- ({c}.('t0' -> 't1')).'t1'))
+
+    Selecting a collection of expressions from another collection is equivalent to selecting each
+    right-hand side element from the entire left-hand side collection and vica versa
+
+    3.1.4.1) (e00 ... e0n) must be explicitly evaluated inside the context the collection provides
+
+                              ctx |- (e00 e01 ... e0n).exs1
+        ---------------------------------------------------------------------------------
+        ((ctx,(e00 e01 ... e0n) |- e00.exs1)  ...  (ctx,(e00 e01 ... e0n) |- e0n.exs1))
+
+    3.1.4.2)
+
+                                ctx |- ex0.(e10 e11 ... e1n)
+        ---------------------------------------------------------------------------------------------------
+        ((ctx |- ex0.(ctx,(e10 e11 ... e1n) |- e10))  ...  (ctx |- ex0.(ctx,(e10 e11 ... e1n) |- e1n)))
+
+          (Note: (e10 ... e1n) must be explicitly evaluated inside the context the collection
+          provides)
+
+    TODO: This implementation is not quite correct. Each (e00/e10 ... e0n/e1n) must be evaluated
+          yet the collection simultaneously requires itself as a context while it is being
+          evaluated.
+          See evalConjunctMatch: it currently requires each domain in the context to be fully
+          memoized.
+          We might need to create a specialized version of mapEvalWith to take this into account
+          E.g. evalCollection
 -}
 
+-- 3.1.1
 eval (_, ex@(
     Eval
       (Witness (Conjunct exs1))
@@ -448,165 +557,24 @@ eval (_, ex@(
   ))
   | True = Success []
 
-{-
-  2.1.2) Selecting any collection of expressions from an atom outside of any context produces
-         Bottom (nothing).
-
-        't0'.exs1
-        ---------
-           ()
--}
-
-eval (octx@[], ex@(
-    Eval
-      (Witness (Conjunct exs1))
-      [Symbol t0]
-  ))
-  | True = Success []
-
-{-
-  2.1.3) Selecting any collection of expressions from Top simply returns the collection in the
-         context of Top. This means that any query acting on the result of this computation will
-         succeed, however the result can still be used on the right-hand side of another query to
-         refine another codomain.
-
-         octx |- _.exs1
-         --------------
-           _ |- exs1
--}
-
-eval (octx, ex@(
+-- 3.1.2
+eval (ctx, ex@(
     Eval
       (Witness (Conjunct exs1))
       [Top]
   ))
   | True =
-    case mapEvalWith octx exs1 of
+    case mapEvalWith ctx exs1 of
       Success r -> Success $ map (((,) [[Top]]) . snd) r
       Error     -> Error
 
-{-
-  2.1.4) First evaluate subqueries before evaluating the full query.
-
-        In the first case the context returned from the left-hand subquery is carried over to the
-        main query. Note that this also is the natural bracketing for a query of the form
-        'exs0.qs0.exs1'. It can never happen that exs1 is the result of a query evaluated on the
-        right-hand side because the left-hand side is always fully evaluated first (due to the order
-        of the following two rules) - thus exs1 cannot have an internal context.
-
-        octx |- (exs0.qs0).exs1
-        -----------------------
-        (octx |- exs0.qs0).exs1   with (octx |- exs0.qs0) evaluated first (this may be multiple
-                                  expressions with multiple contexts)
-
-        In the second case, note that the left-hand side collection does not affect the right-hand
-        side subquery in any way, although the context passed in to this rule may affect either
-        query.
-
-            octx |- exs0.(exs1.qs1)
-        -------------------------------
-        octx |- exs0.(octx |- exs1.qs1)   with (octx |- exs1.q1) evaluated first (this may be
-                                          multiple expressions but only the single outer context is
-                                          used in the outer query.
-
-        TODO: This rule could possibly be extended to all types of queries...
--}
-
-eval (octx, ex@(
+-- 3.1.3
+eval (ctx@[], ex@(
     Eval
-      q'exs1@(Witness (Conjunct exs1))
-      [ex'qs0@(Eval
-        (Witness (Conjunct qs0))
-        exs0)]
+      (Witness (Conjunct exs1))
+      [Symbol t0]
   ))
-  | True = mapEvalOuter (Eval q'exs1) $ eval (octx, ex'qs0)
-
-
-eval (octx, ex@(
-    Eval
-      (Witness (Conjunct
-        [ex'qs1@(Eval
-          (Witness (Conjunct qs1))
-          exs1)]))
-      exs0
-  ))
-  | True = mapEvalInner octx (\e -> Eval (Witness (Conjunct e)) exs0) $ eval (octx, ex'qs1)
-
-{-
-  2.2) Selecting a collection of expressions from another collection is equivalent to selecting each
-       right-hand side element from the entire left-hand side collection and vica versa
-
-                              octx |- (e00 e01 ... e0n).exs1
-        ---------------------------------------------------------------------------------
-        ((octx,(e00 e01 ... e0n) |- e00.exs1)  ...  (octx,(e00 e01 ... e0n) |- e0n.exs1))
-
-          (Note: (e00 ... e0n) must be explicitly evaluated inside the context the collection
-          provides)
-
-                                octx |- ex0.(e10 e11 ... e1n)
-        ---------------------------------------------------------------------------------------------------
-        ((octx |- ex0.(octx,(e10 e11 ... e1n) |- e10))  ...  (octx |- ex0.(octx,(e10 e11 ... e1n) |- e1n)))
-
-          (Note: (e10 ... e1n) must be explicitly evaluated inside the context the collection
-          provides)
-
-      TODO: This implementation is not quite correct. Each (e00/e10 ... e0n/e1n) must be evaluated
-            yet the collection simultaneously requires itself as a context while it is being
-            evaluated.
-            See evalConjunctMatch: it currently requires each domain in the context to be fully
-            memoized.
-            We might need to create a specialized version of mapEvalWith to take this into account
-            E.g. evalCollection
--}
-
-eval (octx, ex@(
-    Eval
-      q'exs1@(Witness (Conjunct exs1))
-      exs0@(e0:es0)
-  ))
-  | True = mapEvalOuter (\e0 -> Eval q'exs1 e0) eval'exs0
-  where
-    eval'exs0 = mapEvalWith (exs0:octx) exs0
-    -- TODO: This version does not memoize exs0 in the context of eval'exs0, which may be
-    --       problematic. I.e. we do not have
-    --       eval'exs0 = mapEvalWith (eval'exs0:octx) exs0
-    --       since eval'exs0 is being evaluated. We also can't substitute (eval'exs0:octx) on the
-    --       outside because the context may also be modified by evaluating by exs0
-
-eval (octx, ex@(
-    Eval
-      (Witness (Conjunct exs1@(e1:es1)))
-      exs'ex0@[ex0]
-  ))
-  | True = mapEvalInner octx (\e1 -> Eval (Witness (Conjunct e1)) exs'ex0) eval'exs1
-  where
-    eval'exs1 = mapEvalWith (exs1:octx) exs1
-
-{- 2.?) Query with a symbol on the left-hand side. This may return a different (smaller context as
-        the query looks "up" in the context.
-
-           c |- 't0'.ex1
-        --------------------
-        ({c}.('t0' -> _)).ex1
-
-                       cs,c |- 't0'.ex1
-        -------------------------------------------------
-        ((cs |- 't0'.ex1)  (cs |- ({c}.('t0' -> _)).ex1))
-
-        Note: The implementation might differ a bit from the semantics here simply for performance
-        reasons
-
-        (Lemmas:
-
-                          cs,c |- 't0'._
-          ---------------------------------------------
-          ((cs |- 't0'._)  (cs |- ({c}.('t0' -> _))._))
-
-                         cs,c |- 't0'.'t1'
-          ------------------------------------------------------
-          ((cs |- 't0'.'t1')  (cs |- ({c}.('t0' -> 't1')).'t1'))
-        )
--}
+  | True = Success []
 
 eval ([c], ex@(
     Eval
@@ -620,7 +588,6 @@ eval ([c], ex@(
           (Witness (Conjunct [Eval (DeclareLambda Nothing) c]))
           [Eval (Declare exs't0) [Top]]])
 
-
 eval (c:cs, ex@(
     Eval
       q'ex1@(Witness (Conjunct [ex1]))
@@ -632,18 +599,108 @@ eval (c:cs, ex@(
         (Witness (Conjunct [Eval (DeclareLambda Nothing) c]))
         [Eval (Declare [Symbol t0]) [Top]]]
 
+-- 3.1.4
+eval (ctx, ex@(
+    Eval
+      q'exs1@(Witness (Conjunct exs1))
+      exs0@(e0:es0)
+  ))
+  | True = mapEvalOuter (\e0 -> Eval q'exs1 e0) eval'exs0
+  where
+    eval'exs0 = mapEvalWith (exs0:ctx) exs0
+    -- TODO: This version does not memoize exs0 in the context of eval'exs0, which may be
+    --       problematic. I.e. we do not have
+    --       eval'exs0 = mapEvalWith (eval'exs0:ctx) exs0
+    --       since eval'exs0 is being evaluated. We also can't substitute (eval'exs0:ctx) on the
+    --       outside because the context may also be modified by evaluating by exs0
+
+eval (ctx, ex@(
+    Eval
+      (Witness (Conjunct exs1@(e1:es1)))
+      exs'ex0@[ex0]
+  ))
+  | True = mapEvalInner ctx (\e1 -> Eval (Witness (Conjunct e1)) exs'ex0) eval'exs1
+  where
+    eval'exs1 = mapEvalWith (exs1:ctx) exs1
+
+
+
+
+
+
+
+
+
+
+
+
+
+-------- OLD CODE:
+
+
+
+
+
+{-
+  2.1.4) First evaluate subqueries before evaluating the full query.
+
+        In the first case the context returned from the left-hand subquery is carried over to the
+        main query. Note that this also is the natural bracketing for a query of the form
+        'exs0.qs0.exs1'. It can never happen that exs1 is the result of a query evaluated on the
+        right-hand side because the left-hand side is always fully evaluated first (due to the order
+        of the following two rules) - thus exs1 cannot have an internal context.
+
+        ctx |- (exs0.qs0).exs1
+        -----------------------
+        (ctx |- exs0.qs0).exs1   with (ctx |- exs0.qs0) evaluated first (this may be multiple
+                                  expressions with multiple contexts)
+
+        In the second case, note that the left-hand side collection does not affect the right-hand
+        side subquery in any way, although the context passed in to this rule may affect either
+        query.
+
+            ctx |- exs0.(exs1.qs1)
+        -------------------------------
+        ctx |- exs0.(ctx |- exs1.qs1)   with (ctx |- exs1.q1) evaluated first (this may be
+                                          multiple expressions but only the single outer context is
+                                          used in the outer query.
+
+        TODO: This rule could possibly be extended to all types of queries...
+-}
+
+eval (ctx, ex@(
+    Eval
+      q'exs1@(Witness (Conjunct exs1))
+      [ex'qs0@(Eval
+        (Witness (Conjunct qs0))
+        exs0)]
+  ))
+  | True = mapEvalOuter (Eval q'exs1) $ eval (ctx, ex'qs0)
+
+
+eval (ctx, ex@(
+    Eval
+      (Witness (Conjunct
+        [ex'qs1@(Eval
+          (Witness (Conjunct qs1))
+          exs1)]))
+      exs0
+  ))
+  | True = mapEvalInner ctx (\e -> Eval (Witness (Conjunct e)) exs0) $ eval (ctx, ex'qs1)
+
+
 {- 2.?  Query with an arrow on the left-hand side
 
-                 octx |- ('t0' -> r0 -> rs0).(ictx |- (e0 -> es0))
+                 ctx |- ('t0' -> r0 -> rs0).(ictx |- (e0 -> es0))
         ------------------------------------------
-        octx |- ({octx}.(ex0 -> rhs0) {octx}.ex0).(ictx |- ex1)
+        ctx |- ({ctx}.(ex0 -> rhs0) {ctx}.ex0).(ictx |- ex1)
 -}
 
 {- 2.?  Query with an arrow on the left-hand side
 
-                 octx |- (ex0 -> rhs0).(ictx |- ex1)
+                 ctx |- (ex0 -> rhs0).(ictx |- ex1)
         ------------------------------------------
-        octx |- ({octx}.(ex0 -> rhs0) {octx}.ex0).(ictx |- ex1)
+        ctx |- ({ctx}.(ex0 -> rhs0) {ctx}.ex0).(ictx |- ex1)
 -}
 
 
@@ -652,10 +709,6 @@ eval (c:cs, ex@(
        context of the left-hand side, only if the left-hand side does not evaluate to Bottom.
        This holds regardless of the context.
 
-        ctx |- (() -> rhs0)._
-        ---------------------
-                  ()
-
         ctx |- (exs0 -> _)._      (This rule would be implicit except that context can be discarded)
         --------------------
                   _
@@ -663,38 +716,48 @@ eval (c:cs, ex@(
          ctx |- (exs0 -> rhs0)._
         -------------------------
         ctx, exs0 -> rhs0 |- rhs0
+
+        (Lemmas:
+
+          ctx |- (() -> rhs0).exs1  (This rule holds implicitly by the eval rule for () -> rhs)
+          ------------------------
+                    ()
+        )
 -}
 
 eval (ctx, ex@(
     Eval
       (Witness (Conjunct [Top]))
-      [ex'exs0@(Eval
-        (Declare [])
-        rhs0)]
-  ))
-  | True = Success []
-
-eval (ctx, ex@(
-    Eval
-      (Witness (Conjunct [Top]))
-      [ex'exs0@(Eval
+      [Eval
         (Declare exs0)
-        [Top])]
+        [Top]]
   ))
   | True = if mapEvalWith ctx exs0 == Error then Error else Success [([], Top)]
 
 eval (ctx, ex@(
     Eval
       (Witness (Conjunct [Top]))
-      exs'exs0@[Eval
+      exs'exs0@[ex'exs0@(Eval
         (Declare exs0)
-        rhs0]
+        rhs0)]
   ))
   | True =
-    case mapEvalWith ctx exs0 of
-      Success [] -> Success []
-      Success _  -> Success $ map ((,) (exs'exs0:ctx)) rhs0
+    case eval (ctx, ex'exs0) of
       Error      -> Error
+      Success [] -> Success []
+      Success r  -> case mapEvalWith ctx exs0 of
+        Error      -> Error
+        Success [] -> Success []
+        Success _  -> Success $ map ((,) ((map snd r):ctx)) rhs0
+
+--eval (ctx, ex@(
+--    Eval
+--      (Witness (Conjunct [Top]))
+--      [ex'exs0@(Eval
+--        (Declare [])
+--        rhs0)]
+--  ))
+--  | True = Success []
 
 {-
   2.?)
@@ -711,7 +774,7 @@ eval (ctx, ex@(
         ctx,exs0 -> 'a' |- 'a'
 -}
 
-eval (octx, ex@(
+eval (ctx, ex@(
     Eval
       q'exs1@(Witness (Conjunct
         [Symbol b]))
@@ -719,10 +782,10 @@ eval (octx, ex@(
         (Declare exs0)
         [ex'a@(Symbol a)]]
   ))
-  | a == b    = if mapEvalWith octx exs0 == Error then Error else Success [(exs'exs0:octx, ex'a)]
-  | otherwise = if mapEvalWith octx exs0 == Error then Error else Success []
+  | a == b    = if mapEvalWith ctx exs0 == Error then Error else Success [(exs'exs0:ctx, ex'a)]
+  | otherwise = if mapEvalWith ctx exs0 == Error then Error else Success []
 
-eval (octx, ex@(
+eval (ctx, ex@(
     Eval
       q'exs1@(Witness (Conjunct
         [ex'a@(Symbol a)]))
@@ -730,7 +793,7 @@ eval (octx, ex@(
         (Declare exs0)
         [Top]]
   ))
-  | True      = if mapEvalWith octx exs0 == Error then Error else Success [(exs'exs0:octx, ex'a)]
+  | True      = if mapEvalWith ctx exs0 == Error then Error else Success [(exs'exs0:ctx, ex'a)]
 
 {- Selecting multiple expression from a declaration is equivalent to selecting each expression
    individually, except for context...... TODO
