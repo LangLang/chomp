@@ -475,7 +475,7 @@ eval thunk@(ctx, ex@(
 
     Simple queries varying expressions on the left-hand side
 
-    3.1.1) This rule could possibly be made implicit through 3.1.
+    3.1.1) This rule could possibly be made implicit through 3.1.  (TODO: WHAT DID I MEAN TO SAY HERE?)
 
         ctx |- ().exs1
         ---------------
@@ -576,8 +576,8 @@ eval ([c], ex@(
       Eval
         q'ex1
         [Eval
-          (Witness (Conjunct [Eval (DeclareLambda Nothing) c]))
-          [Eval (Declare exs't0) [Top]]])
+          (Witness (Conjunct [Eval (Declare exs't0) [Top]]))
+          [Eval (DeclareLambda Nothing) c]])
 
 eval (c:cs, ex@(
     Eval
@@ -587,8 +587,8 @@ eval (c:cs, ex@(
   | True = mapEvalWith cs [
       ex,
       Eval
-        (Witness (Conjunct [Eval (DeclareLambda Nothing) c]))
-        [Eval (Declare [Symbol t0]) [Top]]]
+        (Witness (Conjunct [Eval (Declare [Symbol t0]) [Top]]))
+        [Eval (DeclareLambda Nothing) c]]
 
 -- 3.1.4
 eval (ctx, ex@(
