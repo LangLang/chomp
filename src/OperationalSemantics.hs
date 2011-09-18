@@ -475,7 +475,7 @@ eval thunk@(ctx, ex@(
 
     Simple queries varying expressions on the left-hand side
 
-    3.1.1)
+    3.1.1) This rule could possibly be made implicit through 3.1.
 
         ctx |- ().exs1
         ---------------
@@ -525,20 +525,11 @@ eval thunk@(ctx, ex@(
     Selecting a collection of expressions from another collection is equivalent to selecting each
     right-hand side element from the entire left-hand side collection and vica versa
 
-    3.1.4.1) (e00 ... e0n) must be explicitly evaluated inside the context the collection provides
+    3.1.4) (e00 ... e0n) must be explicitly evaluated inside the context the collection provides
 
                               ctx |- (e00 e01 ... e0n).exs1
         ---------------------------------------------------------------------------------
         ((ctx,(e00 e01 ... e0n) |- e00.exs1)  ...  (ctx,(e00 e01 ... e0n) |- e0n.exs1))
-
-    3.1.4.2)
-
-                                ctx |- ex0.(e10 e11 ... e1n)
-        ---------------------------------------------------------------------------------------------------
-        ((ctx |- ex0.(ctx,(e10 e11 ... e1n) |- e10))  ...  (ctx |- ex0.(ctx,(e10 e11 ... e1n) |- e1n)))
-
-          (Note: (e10 ... e1n) must be explicitly evaluated inside the context the collection
-          provides)
 
     TODO: This implementation is not quite correct. Each (e00/e10 ... e0n/e1n) must be evaluated
           yet the collection simultaneously requires itself as a context while it is being
@@ -614,6 +605,102 @@ eval (ctx, ex@(
     --       since eval'exs0 is being evaluated. We also can't substitute (eval'exs0:ctx) on the
     --       outside because the context may also be modified by evaluating by exs0
 
+
+{-
+    Simple queries varying expressions on the right-hand side
+
+    3.2.1)
+
+        ctx |- exs0.()
+        ---------------
+              ()
+
+    Selecting Top from a declaration returns the right-hand side of the arrow in the context of the
+    left-hand side, only if the left-hand side does not evaluate to Bottom.
+
+    3.2.2.1) This rule would be implicit except that context can be discarded
+
+        ctx |- (exs0 -> _)._
+        --------------------
+                  _
+
+    3.2.2.2)
+
+         ctx |- (exs0 -> rhs0)._
+        -------------------------
+        ctx, exs0 -> rhs0 |- rhs0
+
+    Also Note) This rule holds implicitly by the eval rule for () -> rhs. Thus the left-hand side
+               must be evaluated.
+
+        ctx |- (() -> rhs0).exs1
+        ------------------------
+                  ()
+
+    TODO: But what if (exs0 -> rhs0) -> someexp is already in the context?
+
+    3.2.3)
+
+    3.2.4)
+
+                                ctx |- ex0.(e10 e11 ... e1n)
+        ---------------------------------------------------------------------------------------------------
+        ((ctx |- ex0.(ctx,(e10 e11 ... e1n) |- e10))  ...  (ctx |- ex0.(ctx,(e10 e11 ... e1n) |- e1n)))
+
+          (Note: (e10 ... e1n) must be explicitly evaluated inside the context the collection
+          provides)
+
+    TODO: See notes at 3.1.4
+-}
+
+-- 3.2.1
+eval (_, ex@(
+    Eval
+      (Witness (Conjunct []))
+      exs0
+  ))
+  | True = Success []
+
+-- 3.2.2
+eval (ctx, ex@(
+    Eval
+      (Witness (Conjunct [Top]))
+      [Eval
+        (Declare exs0)
+        [Top]]
+  ))
+  | True = if mapEvalWith ctx exs0 == Error then Error else Success [([], Top)]
+
+eval (ctx, ex@(
+    Eval
+      (Witness (Conjunct [Top]))
+      exs'exs0@[ex'exs0@(Eval
+        (Declare exs0)
+        rhs0)]
+  ))
+  | True =
+    case eval (ctx, ex'exs0) of
+      Error      -> Error
+      Success [] -> Success []
+      Success r  -> case mapEvalWith ctx exs0 of
+        Error      -> Error
+        Success [] -> Success []
+        Success _  -> Success $ map ((,) ((map snd r):ctx)) rhs0
+
+--eval (ctx, ex@(
+--    Eval
+--      (Witness (Conjunct [Top]))
+--      [ex'exs0@(Eval
+--        (Declare [])
+--        rhs0)]
+--  ))
+--  | True = Success []
+
+
+
+-- 3.2.3
+
+-- 3.2.4
 eval (ctx, ex@(
     Eval
       (Witness (Conjunct exs1@(e1:es1)))
@@ -703,61 +790,6 @@ eval (ctx, ex@(
         ctx |- ({ctx}.(ex0 -> rhs0) {ctx}.ex0).(ictx |- ex1)
 -}
 
-
-{-
-  2.3) Selecting Top from a declaration returns the right-hand side of the arrow in the
-       context of the left-hand side, only if the left-hand side does not evaluate to Bottom.
-       This holds regardless of the context.
-
-        ctx |- (exs0 -> _)._      (This rule would be implicit except that context can be discarded)
-        --------------------
-                  _
-
-         ctx |- (exs0 -> rhs0)._
-        -------------------------
-        ctx, exs0 -> rhs0 |- rhs0
-
-        (Lemmas:
-
-          ctx |- (() -> rhs0).exs1  (This rule holds implicitly by the eval rule for () -> rhs)
-          ------------------------
-                    ()
-        )
--}
-
-eval (ctx, ex@(
-    Eval
-      (Witness (Conjunct [Top]))
-      [Eval
-        (Declare exs0)
-        [Top]]
-  ))
-  | True = if mapEvalWith ctx exs0 == Error then Error else Success [([], Top)]
-
-eval (ctx, ex@(
-    Eval
-      (Witness (Conjunct [Top]))
-      exs'exs0@[ex'exs0@(Eval
-        (Declare exs0)
-        rhs0)]
-  ))
-  | True =
-    case eval (ctx, ex'exs0) of
-      Error      -> Error
-      Success [] -> Success []
-      Success r  -> case mapEvalWith ctx exs0 of
-        Error      -> Error
-        Success [] -> Success []
-        Success _  -> Success $ map ((,) ((map snd r):ctx)) rhs0
-
---eval (ctx, ex@(
---    Eval
---      (Witness (Conjunct [Top]))
---      [ex'exs0@(Eval
---        (Declare [])
---        rhs0)]
---  ))
---  | True = Success []
 
 {-
   2.?)
@@ -1189,7 +1221,6 @@ ctx |- ????????
 (Eval (Witness (Complement exs0) exs1)
 
 -}
-
 
 -- Evaluates the expression exactly like eval, but ignoring any errors
 
