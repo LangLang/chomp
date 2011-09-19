@@ -618,7 +618,7 @@ eval (ctx, ex@(
     Selecting Top from a declaration returns the right-hand side of the arrow in the context of the
     left-hand side, only if the left-hand side does not evaluate to Bottom.
 
-    3.2.2.1) This rule would be implicit except that context can be discarded
+    3.2.2.1) This rule would be implicit (in 3.2.2.2) except that context can be discarded
 
         ctx |- (exs0 -> _)._
         --------------------
@@ -630,8 +630,8 @@ eval (ctx, ex@(
         -------------------------
         ctx, exs0 -> rhs0 |- rhs0
 
-    Also Note) This rule holds implicitly by the eval rule for () -> rhs. Thus the left-hand side
-               must be evaluated.
+    Also Note) The following rule holds implicitly by the eval rule for () -> rhs. Thus the
+               left-hand side must be evaluated.
 
         ctx |- (() -> rhs0).exs1
         ------------------------
