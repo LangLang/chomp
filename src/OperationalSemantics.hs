@@ -512,7 +512,7 @@ eval thunk@(ctx, ex@(
         ((cs |- 't0'.ex1)  (cs |- ({c}.('t0' -> _)).ex1))
 
 
-    Also Note) Simple optimizations could be implemented for 3.1.3.2, 3.1.3.3
+    Note) Simple optimizations could be implemented for 3.1.3.2, 3.1.3.3
 
                         cs,c |- 't0'._
         ---------------------------------------------
@@ -618,7 +618,8 @@ eval (ctx, ex@(
     Selecting Top from a declaration returns the right-hand side of the arrow in the context of the
     left-hand side, only if the left-hand side does not evaluate to Bottom.
 
-    3.2.2.1) This rule would be implicit (in 3.2.2.2) except that context can be discarded
+    3.2.2.1) This rule would be implicit (in 3.2.2.2) except that context can be discarded (hence no
+             query operations are needed on either side of the turnstile, just return Top)
 
         ctx |- (exs0 -> _)._
         --------------------
@@ -630,14 +631,21 @@ eval (ctx, ex@(
         -------------------------
         ctx, exs0 -> rhs0 |- rhs0
 
-    Also Note) The following rule holds implicitly by the eval rule for () -> rhs. Thus the
-               left-hand side must be evaluated.
+
+    Note) The following rule holds implicitly by the eval rule for () -> rhs. Thus the left-hand
+          side must first be evaluated.
 
         ctx |- (() -> rhs0).exs1
         ------------------------
                   ()
 
-    TODO: But what if (exs0 -> rhs0) -> someexp is already in the context?
+    TODO: This rule should first tests whether (exs0 -> rhs0) -> someexp exists in the context, because
+          this will always give a strictly larger context.
+          I.e. (ctx (exs0 -> rhs0) -> someexp exs0 -> rhs0) is larger than (ctx exs0 -> rhs0)
+
+    TODO: But what happens if a -> c -> d |- ((a b) -> c).c does (a b) -> c match a -> c on the
+          left-hand side?
+
 
     3.2.3)
 
