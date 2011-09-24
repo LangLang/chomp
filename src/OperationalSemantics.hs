@@ -643,16 +643,26 @@ eval (ctx, ex@(
           this will always give a strictly larger context.
           I.e. (ctx (exs0 -> rhs0) -> someexp exs0 -> rhs0) is larger than (ctx exs0 -> rhs0)
 
-    TODO: But what happens if a -> c -> d |- ((a b) -> c).c does (a b) -> c match a -> c on the
-          left-hand side?
+    TODO: But what happens if (a -> c) -> c -> d |- ((a b) -> c).c does (a b) -> c match a -> c on the
+          left-hand side? If this is the case then the query will need to take place on the context
+          as well as the lhs since the resulting contexts will have disjoint subsets of elements.
+          (I.e. neither is strictly larger than the other)
+          Given that (a b) -> c is shorthand for (a -> c b -> c)
 
+                               (a -> c) -> c -> d |- (a -> c b -> c).c
+          -------------------------------------------------------------------------------
+          ((a -> c) -> c -> d a -> c c -> d |- c) ((a -> c) -> c -> d a -> c b -> c |- c)
+
+          This should be automatically handled by rule 3.1.4, however we don't currently
+          split up (a b) -> c into (a -> c b -> c) automatically... (should this have been done in
+          rule 2.4?)
 
     3.2.3)
 
     3.2.4)
 
-                                ctx |- ex0.(e10 e11 ... e1n)
-        ---------------------------------------------------------------------------------------------------
+                                         ctx |- ex0.(e10 e11 ... e1n)
+        -----------------------------------------------------------------------------------------------
         ((ctx |- ex0.(ctx,(e10 e11 ... e1n) |- e10))  ...  (ctx |- ex0.(ctx,(e10 e11 ... e1n) |- e1n)))
 
           (Note: (e10 ... e1n) must be explicitly evaluated inside the context the collection
