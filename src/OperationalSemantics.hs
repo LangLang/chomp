@@ -460,8 +460,7 @@ eval thunk@(ctx, ex@(
   | True = Success [thunk]
 
 -- 2.4
-eval thunk@(ctx, ex@(
-    Eval
+eval (ctx, ( Eval
       (Declare exs0)
       exs1
   ))
@@ -501,15 +500,15 @@ eval thunk@(ctx, ex@(
 
     3.1.3.2)
 
-           c |- 't0'.ex1
+           c |- 't0'.exs1
         --------------------
-        ({c}.('t0' -> _)).ex1
+        ({c}.('t0' -> _)).exs1
 
     3.1.3.3)
 
-                       cs,c |- 't0'.ex1
+                       cs,c |- 't0'.exs1
         -------------------------------------------------
-        ((cs |- 't0'.ex1)  (cs |- ({c}.('t0' -> _)).ex1))
+        ((cs |- 't0'.exs1)  (cs |- ({c}.('t0' -> _)).exs1))
 
 
     Note) Simple optimizations could be implemented for 3.1.3.2, 3.1.3.3
@@ -569,19 +568,19 @@ eval (ctx@[], ex@(
 
 eval ([c], ex@(
     Eval
-      q'ex1@(Witness (Conjunct [ex1]))
+      q'exs1@(Witness (Conjunct exs1))
       exs't0@[(Symbol t0)]
   ))
   | True = eval ([],
       Eval
-        q'ex1
+        q'exs1
         [Eval
           (Witness (Conjunct [Eval (Declare exs't0) [Top]]))
           [Eval (DeclareLambda Nothing) c]])
 
 eval (c:cs, ex@(
     Eval
-      q'ex1@(Witness (Conjunct [ex1]))
+      q'exs1@(Witness (Conjunct exs1))
       [ex't0@(Symbol t0)]
   ))
   | True = mapEvalWith cs [
@@ -625,12 +624,31 @@ eval (ctx, ex@(
         --------------------
                   _
 
-    3.2.2.2)
+    3.2.2.2.1)
 
-         ctx |- (exs0 -> rhs0)._
-        -------------------------
-        ctx, exs0 -> rhs0 |- rhs0
+        () |- (exs0 -> rhs0)._
+        ----------------------
+         exs0 -> rhs0 |- rhs0
 
+        Where exs0 -> rhs0 has been evaluated (by rule 2)
+
+    3.2.2.2.2)
+
+            c |- (exs0 -> rhs0)._
+        -----------------------------
+        ({c}.((exs0 -> rhs0) -> _))._
+
+        Where exs0 -> rhs0 has been evaluated (by rule 2)
+
+    3.2.2.2.3)
+
+                          cs,c |- (exs0 -> rhs0)._
+        ---------------------------------------------------------------
+        (cs |- (exs0 -> rhs0)._)  (cs |- ({c}.((exs0 -> rhs0) -> _))._)
+
+        Where exs0 -> rhs0 has been evaluated (by rule 2)
+
+    Note) These rules have similarities to rules 3.1.3 in how the context is treated.
 
     Note) The following rule holds implicitly by the eval rule for () -> rhs. Thus the left-hand
           side must first be evaluated.
@@ -657,7 +675,23 @@ eval (ctx, ex@(
           split up (a b) -> c into (a -> c b -> c) automatically... (should this have been done in
           rule 2.4?)
 
+    TODO: Determine whether there should be special rules under 3.2.2.2 for
+          ctx |- (\ -> rhs0)._ and/or ctx |- (\x -> rhs0)._ since it seems likely that any rule in
+          which anonymous terms occur those terms should not be looked up in the context.
+          (Perhaps this should be implemented as a exception in rule 3.2.4 or possibly a later
+          rule like 3.3?)
+
+    3.2.2.3)
+
+        ctx |- (exs0.exs1)._
+        --------------------
+        ctx |- (exs0.exs1)._
+
+        where (exs0.exs1) has been evaluated
+
     3.2.3)
+
+
 
     3.2.4)
 
@@ -679,7 +713,7 @@ eval (_, ex@(
   ))
   | True = Success []
 
--- 3.2.2
+-- 3.2.2.1
 eval (ctx, ex@(
     Eval
       (Witness (Conjunct [Top]))
@@ -689,9 +723,49 @@ eval (ctx, ex@(
   ))
   | True = if mapEvalWith ctx exs0 == Error then Error else Success [([], Top)]
 
-eval (ctx, ex@(
+
+-- 3.2.2.2
+eval (ctx@[], ex@(
     Eval
-      (Witness (Conjunct [Top]))
+      q'top@(Witness (Conjunct [Top]))
+      exs'exs0@[ex'exs0@(Eval
+        (Declare exs0)
+        rhs0)]
+  ))
+  | True =
+    case eval ([], ex'exs0) of
+      Error      -> Error
+      Success [] -> Success []
+      Success r  -> case mapEvalWith [] exs0 of
+        Error      -> Error
+        Success [] -> Success []
+        --Success _  -> Success $ map ((,) (map snd r)) rhs0
+
+eval ([c], ex@(
+    Eval
+      q'top@(Witness (Conjunct [Top]))
+      exs'exs0@[ex'exs0@(Eval
+        (Declare exs0)
+        rhs0)]
+  ))
+  | True =
+    case eval ([c], ex'exs0) of
+      Error      -> Error
+      Success [] -> Success []
+      Success r  -> case mapEvalWith [c] exs0 of
+        Error      -> Error
+        Success [] -> Success []
+        Success _  ->
+          eval ([],
+            Eval
+              q'top
+              [Eval
+                (Witness (Conjunct [Eval (Declare (map snd r)) [Top]]))
+                [Eval (DeclareLambda Nothing) c]])
+
+eval (ctx@(c:cs), ex@(
+    Eval
+      q'top@(Witness (Conjunct [Top]))
       exs'exs0@[ex'exs0@(Eval
         (Declare exs0)
         rhs0)]
@@ -703,18 +777,15 @@ eval (ctx, ex@(
       Success r  -> case mapEvalWith ctx exs0 of
         Error      -> Error
         Success [] -> Success []
-        Success _  -> Success $ map ((,) ((map snd r):ctx)) rhs0
-
---eval (ctx, ex@(
---    Eval
---      (Witness (Conjunct [Top]))
---      [ex'exs0@(Eval
---        (Declare [])
---        rhs0)]
---  ))
---  | True = Success []
-
-
+        Success _  -> mapEval
+          [(cs, Eval
+            q'top
+            (map snd r)),
+          (cs, Eval
+            q'top
+            [Eval
+              (Witness (Conjunct [Eval (Declare (map snd r)) [Top]]))
+              [Eval (DeclareLambda Nothing) c]])]
 
 -- 3.2.3
 
