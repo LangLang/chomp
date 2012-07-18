@@ -8,17 +8,11 @@ import Data.Maybe (isJust)
 import Data.Functor
 import Control.Monad (liftM, liftM2)
 import Text.Printf (printf)
-
-{-- QuickCheck
-import Test.QuickCheck
---import Test.QuickCheck.Gen
-import Test.QuickCheck.Arbitrary
---import Test.QuickCheck.Property
---import Test.QuickCheck.Test
--}
+import System.Exit (exitFailure)
 
 -- SmallCheck
 import Test.SmallCheck
+import Test.SmallCheck.Series
 
 -- Chomp
 import SyntaxTree
@@ -95,9 +89,9 @@ instance Serial LLString where
 -- Parser tests
 
 -- Check whether the parser succeeded
---{-
---prop_parsevalid :: LLString -> IO Bool
-prop_parsevalid (LLString s) =
+{-
+parsevalid :: LLString -> (String, Bool)
+parsevalid (LLString s) =
   output $ prepend (s ++ "   ") $
     case result of
       Partial f -> prepend "Partial-" $ checkResult $ f empty
@@ -110,8 +104,8 @@ prop_parsevalid (LLString s) =
         Partial f        -> ("Impossible partial", False)
         Done rem st      -> ("Done", True)
     prepend s (s',r) = (s ++ s', r)
-    output (s,r)     = putStrLn s >> return r
---}
+    output (s,r)     = r --putStrLn s >> return r
+-}
 {-
 prop_parsevalid :: LLString -> Bool
 prop_parsevalid (LLString s) =
@@ -142,8 +136,8 @@ prop_evalwithconjunct ctx ex0             ex1             = NotSure $ map show [
 main  = mapM_ (\(s,a) -> putStrLn s >> a) tests
 
 tests = [
-  ("parsevalid", smallCheckI prop_parsevalid),
-  --("parseinvalid", quickCheck prop_parseinvalid),
-  ("parsereflect", smallCheck 0 prop_reflectparser)
-  --("evalwithconjunct", unitCheck prop_evalwithconjunct),
+  --("parsevalid", smallCheckI prop_parsevalid),
+  ----("parseinvalid", quickCheck prop_parseinvalid),
+  --("parsereflect", smallCheck 0 prop_reflectparser)
+  ----("evalwithconjunct", unitCheck prop_evalwithconjunct),
   ]

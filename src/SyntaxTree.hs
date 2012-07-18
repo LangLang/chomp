@@ -13,36 +13,43 @@ import Data.ByteString.Char8 (pack)
 {-                              IMPLEMENTATION                              -}
 type Token      = B.ByteString
 
-data Query = Conjunct [Expression]                   -- (.Q)
-           | Complement [Expression]                 -- (~Q)
-           deriving (Eq)
-
-data ExpressionSegment = Declare [Expression]        -- (R->)
-                       | DeclareLambda (Maybe Token) -- (\S->)
-                       | Assert Query                -- assert `dot` (.Q)   or    (:Q)
-                       | Witness Query               -- (.Q)
-                       deriving (Eq)
+data Operator = Arrow           -- -> 
+              | ArrowConjunct   -- ->.
+              | Conjunct        -- .
+              | Complement      -- \
+              deriving (Eq)
 
 data Expression = Symbol Token
                 | Top
-                | Eval ExpressionSegment [Expression]
-                -- | Negative [Expression]     -- (possibly _~(exs), but let's see if we can simply
-                --                             -- use (Eval (Complement exs) [Top]) in a lazy manner
+                | B Expressions Operator Expressions
+                | L Expressions Operator
+                | R Operator Expressions
+                | N Operator
                 deriving (Eq)
+                
+type Expressions = [Expression]  -- Technically Top should also be here 
+
+instance Show Operator where
+  show Arrow = "->"
+  show ArrowConjunct = "->."
+  show Conjunct = "."
+  show Complement = "\\"
 
 instance Show Expression where
   show (Symbol t)     = show t
   show Top            = "_"
-  show (Eval lhs rhs) =
-    case lhs of
-      Declare lhs               -> showExpr lhs ++ " -> " ++ showExpr rhs
-      Assert (Conjunct lhs)     -> showExpr lhs ++ ":" ++ showExpr rhs
-      Witness (Conjunct lhs)    -> showExpr lhs ++ "." ++ showExpr rhs
-      Assert (Complement lhs)   -> showExpr lhs ++ "~~" ++ showExpr rhs
-      Witness (Complement lhs)  -> showExpr lhs ++ "~" ++ showExpr rhs
-    where
-      showExpr []     = "(ERROR: EMPTY EXPRESSION LIST)"
-      showExpr (e:[]) = show e
-      showExpr (e:es) = (foldl (++) ('(':(show e)) $ map show es) ++ ")"
+  show (B l Arrow r) = (showExpr l) ++ " -> " ++ (showExpr r)
+  show (B l ArrowConjunct r) = showExpr l ++ " ->. "  ++ showExpr r  
+  show (B l op r) = showExpr l ++ show op ++ showExpr r
+  show (L l Arrow) = showExpr l ++ " ->"
+  show (L l ArrowConjunct) = showExpr l ++ " ->."
+  show (L l op) = show l ++ show op
+  show (R Arrow r) = "-> " ++ show r
+  show (R ArrowConjunct r) = "->. " ++ showExpr r
+  show (R op r) = show op ++ showExpr r
+  show (N op) = show op
 
-symbolLambda = Symbol $ pack "\\"
+showExpr :: Expressions -> String    
+showExpr []  = "()"
+showExpr [e] = show e
+showExpr (e:es) = "(" ++ (foldl (++) (show e) (map ((" " ++) . show) es)) ++ ")"

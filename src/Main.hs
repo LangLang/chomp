@@ -6,24 +6,13 @@ module Main( main ) where
 -}
 
 {-                                 MODULES                                  -}
--- Standard
-import qualified Data.ByteString as B (getContents)
-import Data.Attoparsec (parse, parseTest)
-import Control.Monad
-
--- Chomp
-import SyntaxTree
-import Parser
-import OperationalSemantics
+-- Driver
+import Driver
 
 {-                              IMPLEMENTATION                              -}
 
 main :: IO ()
-main = do
+main =
   putStrLn "Chomp v0.0.1 for LangLang"
-  --result <- (liftM $ parse parseLangLang) B.getContents
-  --print result
-  return ()
-  (parseTest parseLangLang) =<< B.getContents
-
+  >> driverMain
 

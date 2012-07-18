@@ -1,6 +1,6 @@
 name: chomp
 version: 0.0.1
-cabal-version: -any
+cabal-version: >= 1.2
 build-type: Simple
 license: AllRightsReserved
 license-file: licenses/MIT_LICENSE
@@ -20,32 +20,50 @@ data-files:
 data-dir: ""
 extra-source-files:
 extra-tmp-files:
- 
-executable: chomp
-main-is: Main.hs
-buildable: True
-build-tools:
-cpp-options:
-cc-options:
-ld-options:
-pkgconfig-depends:
-frameworks:
-c-sources:
-default-language:
-other-languages:
-default-extensions:
-other-extensions:
-extensions:
-extra-libraries:
-extra-lib-dirs:
-includes:
-install-includes:
-include-dirs:
-hs-source-dirs: src
-other-modules: OperationalSemantics Tests Parser SyntaxTree
-ghc-prof-options:
-ghc-shared-options:
-ghc-options:
-hugs-options:
-nhc98-options:
-jhc-options:
+
+-- TODO: library chomp
+
+executable chomp
+  main-is: Main.hs
+  buildable: True
+  build-tools:
+  cpp-options:
+  cc-options:
+  ld-options:
+  pkgconfig-depends:
+  frameworks:
+  c-sources:
+  default-language:
+  other-languages:
+  default-extensions:
+  other-extensions:
+  extensions:
+  extra-libraries:
+  extra-lib-dirs:
+  includes:
+  install-includes:
+  include-dirs:
+  hs-source-dirs: src
+  other-modules: Driver OperationalSemantics Parser SyntaxTree
+  ghc-prof-options:
+  ghc-shared-options:
+  ghc-options:
+  hugs-options:
+  nhc98-options:
+  jhc-options:
+  build-depends:  base -any,
+                  bytestring -any,
+                  attoparsec -any,
+                  filepath -any,
+                  directory -any
+
+Test-Suite tests
+  type: exitcode-stdio-1.0
+  main-is: Tests.hs
+  buildable: True
+  hs-source-dirs: src
+  build-depends:  base -any,
+                  bytestring -any,
+                  attoparsec -any,
+                  smallcheck -any
+

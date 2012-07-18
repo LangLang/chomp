@@ -1,15 +1,9 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Parser ( parseLangLang ) where
 
 {-                               DOCUMENTATION                              -}
 {-
     Parse LangLang source code and output a ParseTree
-
-    BUGS:
-      + (2011-07-08)
-        The string "->: a -> b" should be parsed in a way that bracketing looks like this
-        "->: (a -> b)" rather than like "->(: a) -> b"
-        Not sure yet whether "-> :a -> b" should be parsed differently from "->: a -> b", but it
-        might be convenient.
 -}
 
 {-                                 MODULES                                  -}
@@ -28,7 +22,7 @@ import Control.Applicative hiding (many)
 import SyntaxTree
 
 {-                              IMPLEMENTATION                              -}
--- Generic parsers
+{- Generic parsers
 
 -- Make a parser recursive
 -- Note that you might have to combine this with 'try' in some circumstances
@@ -44,6 +38,7 @@ possibly p a = p a <|> return a
 -- Wrap the return value of a parser in a list
 oneToMany :: ([a] -> A.Parser a) -> [a] -> A.Parser [a]
 oneToMany p a = (:[]) <$> (p a)
+-}
 
 -- Common parsing
 
@@ -57,77 +52,33 @@ skipComments = skipMany (AC.skipSpace *> skipCommentLine)
 
 -- AST parsing
 
-parseSymbol :: A.Parser Expression
-parseSymbol =
+symbol :: A.Parser Expression
+symbol =
   (AC.char '_' *> pure Top) <|> (Symbol <$> AC.takeWhile AC.isAlpha_ascii)
 
-parseSelector :: A.Parser ([Expression] -> ExpressionSegment)
-parseSelector =
-  (AC.char ':' *> return (Assert . Conjunct)) <|>
-  (AC.char '.' *> return (Witness . Conjunct)) <|>
-  (AC.char '~' *> ((AC.char '~' *> return (Assert . Complement)) <|> return (Assert . Complement)))
+operator :: A.Parser Operator
+operator =
+  (AC.try $ AC.string "->." *> pure ArrowConjunct) <|> 
+  (AC.string "->" *> pure Arrow) <|> 
+  (AC.char '.' *> pure Conjunct) <|>
+  (AC.char '\\' *> pure Complement)
 
-parseArrow :: [Expression] -> A.Parser ExpressionSegment
-parseArrow e =
-  AC.string (pack "->") *> (return $ Declare e)
-
-parseCollection :: A.Parser [Expression]
-parseCollection =
+collection :: A.Parser Expressions
+collection =
   --AC.char '(' *> ((concat <$>) . many) (parseExpression <* skipComments) <* AC.char ')'
-  AC.char '(' *> parseExpression <* AC.char ')'
+  AC.char '(' *> ((:[]) <$> expression) <* AC.char ')'
 
--- Parse the codomain segment of a query
--- 1.  Can optionally start with a selector ':' or '.'
--- 2.1 Followed by a collection e.g. '(a -> b c:d.e)'
--- 2.2 Or a symbol e.g. 'a'
+expression :: A.Parser Expression
+expression = 
+  (N <$> operator) <|> 
+  symbol
 
-parseQuerySegment :: A.Parser ExpressionSegment
-parseQuerySegment =
-  selector <*> (collection <|> symbol)
-  where
-    selector   = parseSelector <* skipComments
-    collection = parseCollection
-    symbol     = ((:[]) <$> parseSymbol)
-
--- Parse a query expression
--- 1.  Can optionally start with a selector ':' or '.'
--- 2.1 Followed by a collection e.g. '(a:b c -> d)'
--- 2.2 Or a simple Query expression e.g. 'a:b:(e -> f).c:(a:b c -> d)'
--- * No arrows outside of brackets
-
-parseQuerySegmentWith :: [Expression] -> A.Parser [Expression]
-parseQuerySegmentWith e =
-  (:[]) <$> flip Eval e <$> parseQuerySegment
-
-parseQueryExpr :: A.Parser [Expression]
-parseQueryExpr =
-  (segment <|> collection <|> symbol) >>= fixParser parseQuerySegmentWith
-  where
-    segment    = parseQuerySegmentWith [] :: A.Parser [Expression]
-    collection = parseCollection          :: A.Parser [Expression]
-    symbol     = ((:[]) <$> parseSymbol)  :: A.Parser [Expression]
-
-parseRelationExpr :: [Expression] -> A.Parser Expression
-parseRelationExpr e =
-  segment <*> (collection <|> expression)
-  where
-    segment    = Eval <$> (skipComments *> parseArrow e)
-    collection = parseCollection
-    expression = parseExpression
-
-parseExpression :: A.Parser [Expression]
-parseExpression =
-  --skipComments *> (parseQueryExpr >>= possibly (oneToMany parseRelationExpr))
-  parseQueryExpr
+expressions :: A.Parser Expressions
+expressions = collection <|> ((:[]) <$> expression)
 
 -- Main parser
---{-
-parseLangLang :: A.Parser [Expression]
-parseLangLang = parseExpression
---parseLangLang = (concat <$> (many parseExpression)) <* A.endOfInput
---parseLangLang = concat <$> (skipComments *> (many parseExpression <* skipComments) <* A.endOfInput)
---}
-
+parseLangLang :: A.Parser Expressions
+parseLangLang = expressions
 
 -- Temporary example of the non-termination problem with end-of-input in attoparsec
 -- (Will be removed)
