@@ -9,10 +9,10 @@ module Driver( driverMain ) where
 {-                                 MODULES                                  -}
 -- Standard
 import qualified Data.ByteString.Char8 as BC8
-import qualified Data.Attoparsec
+import qualified Data.Attoparsec as Attoparsec
 import Control.Monad
 import qualified System.Environment
-import System.IO (stderr)
+import System.IO (stdout, stderr)
 import qualified System.Exit
 import qualified System.Directory
 import System.FilePath ((</>))
@@ -37,7 +37,16 @@ driverMain = do
           >> printUsage 
           >> (System.Exit.exitWith $ System.Exit.ExitFailure 1)
         else loadSourceFile $ head args
-  Data.Attoparsec.parseTest parseLangLang sourceFileContents
+  case Attoparsec.parseOnly parseLangLang sourceFileContents of
+    --Attoparsec.Fail t c m  -> BC8.hPutStrLn stderr ("Parse Error: " ++ (BC8.pack m))
+    --Attoparsec.Partial _   -> BC8.hPutStrLn stderr ("Parse Error: Need more input")
+    --Attoparsec.Done t r -> 
+    --  BC8.hPutStrLn stdout ("Done.\nRemaining input: " ++ t ++ "\n")
+    --    >> BC8.hPutStrLn r -- TODO: output to file
+    Left message -> BC8.hPutStrLn stderr ("Parse Error: " `BC8.append` (BC8.pack message))
+    Right result -> 
+      BC8.hPutStrLn stdout "Done."
+      >> (BC8.hPutStrLn stdout $ BC8.pack $ show result) -- TODO: output to file
   where
     loadSourceFile path = do
       currentDirPath <- System.Directory.getCurrentDirectory
