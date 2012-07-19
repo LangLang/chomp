@@ -32,17 +32,16 @@ driverMain = do
     then BC8.hPutStrLn stderr "No arguments supplied." >> printUsage >> (System.Exit.exitWith $ System.Exit.ExitFailure 1)
     else if head args == "--help"
       then printUsage >> System.Exit.exitSuccess
-      else if length args > 1
-        then BC8.hPutStrLn stderr "Too many arguments supplied." 
+      else if length args < 2
+        then BC8.hPutStrLn stderr "Too few arguments supplied." 
           >> printUsage 
           >> (System.Exit.exitWith $ System.Exit.ExitFailure 1)
-        else loadSourceFile $ head args
+        else if length args > 2
+          then BC8.hPutStrLn stderr "Too many arguments supplied." 
+            >> printUsage 
+            >> (System.Exit.exitWith $ System.Exit.ExitFailure 1)
+          else loadSourceFile $ head args
   case Attoparsec.parseOnly parseLangLang sourceFileContents of
-    --Attoparsec.Fail t c m  -> BC8.hPutStrLn stderr ("Parse Error: " ++ (BC8.pack m))
-    --Attoparsec.Partial _   -> BC8.hPutStrLn stderr ("Parse Error: Need more input")
-    --Attoparsec.Done t r -> 
-    --  BC8.hPutStrLn stdout ("Done.\nRemaining input: " ++ t ++ "\n")
-    --    >> BC8.hPutStrLn r -- TODO: output to file
     Left message -> BC8.hPutStrLn stderr ("Parse Error: " `BC8.append` (BC8.pack message))
     Right result -> 
       BC8.hPutStrLn stdout "Done."
@@ -53,4 +52,4 @@ driverMain = do
       BC8.readFile (currentDirPath </> path) -- (uses path directly if it is already absolute)
 
 printUsage :: IO ()
-printUsage = putStrLn "USAGE: chomp sourceFile"
+printUsage = putStrLn "USAGE: chomp sourceFile outputFile"
